@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: logging
+  labels:
+    app: kibana
+    component: server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kibana
+      component: server
+  template:
+    metadata:
+      labels:
+        app: kibana
+        component: server
+    spec:
+      serviceAccountName: kibana
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:8.8.0
+        ports:
+        - name: ui
+          containerPort: 5601
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch.logging.svc.cluster.local:9200"
+        - name: SERVER_NAME
+          value: "kibana.depin-ai-compute.local"
+        - name: SERVER_HOST
+          value: "0.0.0.0"
+        - name: SERVER_PORT
+          value: "5601"
+        - name: LOGGING_DEST
+          value: "stdout"
+        - name: ELASTICSEARCH_REQUESTTIMEOUT
+          value: "60000"
+        - name: ELASTICSEARCH_SHARDTIMEOUT
+          value: "30000"
+        - name: KIBANA_DEFAULTAPPID
+          value: "discover"
+        - name: XPACK_MONITORING_ENABLED
+          value: "false"
+        - name: XPACK_SECURITY_ENABLED
+          value: "false"
+        - name: NEWSFEED_ENABLED
+          value: "false"
+        - name: TELEMETRY_ENABLED
+          value: "false"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+        - name: kibana-config
+          mountPath: /usr/share/kibana/config/kibana.yml
+          subPath: kibana.yml
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: data
+          mountPath: /usr/share/kibana/data
+      volumes:
+      - name: kibana-config
+        configMap:
+          name: kibana-config
+          defaultMode: 420
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: data
+        emptyDir:
+          sizeLimit: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-config
+  namespace: logging
+  labels:
+    app: kibana
+    component: config
+data:
+  kibana.yml: |
+    server.host: "0.0.0.0"
+    server.port: 5601
+    server.name: "kibana.depin-ai-compute.local"
+    elasticsearch.hosts: ["http://elasticsearch.logging.svc.cluster.local:9200"]
+    elasticsearch.requestTimeout: 60000
+    elasticsearch.shardTimeout: 30000
+    
+    # Security settings
+    xpack.security.enabled: false
+    xpack.monitoring.enabled: false
+    newsfeed.enabled: false
+    telemetry.enabled: false
+    
+    # Logging
+    logging.dest: stdout
+    logging.silent: false
+    logging.quiet: false
+    logging.verbose: false
+    
+    # Performance
+    server.maxPayloadBytes: 1048576
+    
+    # Default index patterns for DePIN logs
+    kibana.defaultAppId: "discover"
+    
+    # Advanced settings
+    map.includeElasticMapsService: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: logging
+  labels:
+    app: kibana
+    component: server
+spec:
+  type: ClusterIP
+  ports:
+  - name: ui
+    port: 5601
+    targetPort: 5601
+    protocol: TCP
+  selector:
+    app: kibana
+    component: server

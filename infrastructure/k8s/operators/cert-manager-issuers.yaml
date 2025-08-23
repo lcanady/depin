@@ -1,0 +1,169 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app: cert-manager
+    issuer: letsencrypt
+    environment: production
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@depin-ai-compute.local
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+          podTemplate:
+            spec:
+              nodeSelector:
+                "kubernetes.io/os": linux
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 2000
+                runAsGroup: 2000
+                seccompProfile:
+                  type: RuntimeDefault
+              containers:
+              - name: acme-solver
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  runAsNonRoot: true
+                  runAsUser: 2000
+                  capabilities:
+                    drop:
+                    - ALL
+                resources:
+                  requests:
+                    memory: "16Mi"
+                    cpu: "10m"
+                  limits:
+                    memory: "64Mi"
+                    cpu: "100m"
+    - dns01:
+        webhook:
+          groupName: depin.ai
+          solverName: depin-dns-solver
+          config:
+            region: us-west-2
+            zoneName: depin-ai-compute.local
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app: cert-manager
+    issuer: letsencrypt
+    environment: staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: admin@depin-ai-compute.local
+    privateKeySecretRef:
+      name: letsencrypt-staging-key
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+          podTemplate:
+            spec:
+              nodeSelector:
+                "kubernetes.io/os": linux
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 2000
+                runAsGroup: 2000
+                seccompProfile:
+                  type: RuntimeDefault
+              containers:
+              - name: acme-solver
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  runAsNonRoot: true
+                  runAsUser: 2000
+                  capabilities:
+                    drop:
+                    - ALL
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+  labels:
+    app: cert-manager
+    issuer: selfsigned
+    environment: development
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: depin-wildcard-cert
+  namespace: ingress-nginx
+  labels:
+    app: cert-manager
+    certificate: wildcard
+spec:
+  secretName: depin-tls-cert
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+  - "*.depin-ai-compute.local"
+  - "depin-ai-compute.local"
+  - "grafana.depin-ai-compute.local"
+  - "kibana.depin-ai-compute.local"
+  - "prometheus.depin-ai-compute.local"
+  - "alertmanager.depin-ai-compute.local"
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: monitoring-tls-cert
+  namespace: monitoring
+  labels:
+    app: cert-manager
+    certificate: monitoring
+spec:
+  secretName: monitoring-tls-cert
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+  - "grafana.depin-ai-compute.local"
+  - "prometheus.depin-ai-compute.local"
+  - "alertmanager.depin-ai-compute.local"
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: logging-tls-cert
+  namespace: logging
+  labels:
+    app: cert-manager
+    certificate: logging
+spec:
+  secretName: logging-tls-cert
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+  - "kibana.depin-ai-compute.local"
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
