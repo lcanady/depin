@@ -1,0 +1,200 @@
+# Disaster Recovery Runbooks and Procedures
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: disaster-recovery-runbooks
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    component: disaster-recovery
+data:
+  cluster-restore-procedure.sh: |
+    #!/bin/bash
+    # Cluster Disaster Recovery Procedure
+    # This script outlines the steps for full cluster recovery
+    
+    set -euo pipefail
+    
+    echo "=== Kubernetes Cluster Disaster Recovery ==="
+    echo "Step 1: Verify Velero installation and backup availability"
+    velero get backups
+    
+    echo "Step 2: Restore cluster-wide resources"
+    velero restore create cluster-restore-$(date +%Y%m%d-%H%M%S) \
+      --from-backup weekly-full-backup-$(date +%Y%m%d) \
+      --wait
+    
+    echo "Step 3: Restore persistent volumes"
+    velero restore create pv-restore-$(date +%Y%m%d-%H%M%S) \
+      --from-backup daily-backup-$(date +%Y%m%d) \
+      --include-resources persistentvolumes,persistentvolumeclaims \
+      --wait
+    
+    echo "Step 4: Verify storage classes"
+    kubectl get storageclass
+    
+    echo "Step 5: Verify persistent volumes"
+    kubectl get pv,pvc --all-namespaces
+    
+    echo "Step 6: Restore critical applications"
+    velero restore create critical-apps-restore-$(date +%Y%m%d-%H%M%S) \
+      --from-backup critical-data-backup-$(date +%Y%m%d) \
+      --wait
+    
+    echo "Step 7: Verify application health"
+    kubectl get pods --all-namespaces
+    
+    echo "=== Recovery Complete ==="
+    
+  volume-recovery-procedure.sh: |
+    #!/bin/bash
+    # Volume Disaster Recovery Procedure
+    # This script handles individual volume recovery scenarios
+    
+    set -euo pipefail
+    
+    VOLUME_NAME=${1:-""}
+    NAMESPACE=${2:-"default"}
+    
+    if [ -z "$VOLUME_NAME" ]; then
+      echo "Usage: $0 <volume-name> [namespace]"
+      exit 1
+    fi
+    
+    echo "=== Volume Recovery for $VOLUME_NAME ==="
+    
+    echo "Step 1: Check existing volume status"
+    kubectl get pvc $VOLUME_NAME -n $NAMESPACE || echo "Volume not found"
+    
+    echo "Step 2: Find latest backup containing the volume"
+    velero get backups --selector volume=$VOLUME_NAME
+    
+    echo "Step 3: Restore volume from backup"
+    BACKUP_NAME=$(velero get backups -o jsonpath='{.items[0].metadata.name}')
+    velero restore create volume-$VOLUME_NAME-restore-$(date +%Y%m%d-%H%M%S) \
+      --from-backup $BACKUP_NAME \
+      --include-resources persistentvolumeclaims \
+      --namespace-mappings $NAMESPACE:$NAMESPACE-recovery \
+      --wait
+    
+    echo "Step 4: Verify volume recovery"
+    kubectl get pvc -n $NAMESPACE-recovery
+    
+    echo "=== Volume Recovery Complete ==="
+  
+  data-integrity-check.sh: |
+    #!/bin/bash
+    # Data Integrity Check Procedure
+    # This script verifies data integrity after recovery
+    
+    set -euo pipefail
+    
+    echo "=== Data Integrity Verification ==="
+    
+    echo "Step 1: Check storage class availability"
+    kubectl get storageclass
+    
+    echo "Step 2: Test volume provisioning"
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: integrity-test-pvc
+      namespace: default
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 1Gi
+    EOF
+    
+    # Wait for PVC to be bound
+    kubectl wait --for=condition=Bound pvc/integrity-test-pvc --timeout=60s
+    
+    echo "Step 3: Test volume mounting"
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: integrity-test-pod
+      namespace: default
+    spec:
+      containers:
+      - name: test-container
+        image: busybox:1.35
+        command: ["/bin/sh", "-c"]
+        args: 
+        - echo "Testing volume write..."; echo "test-data-$(date)" > /data/test.txt; cat /data/test.txt; echo "Volume test successful"
+        volumeMounts:
+        - name: test-volume
+          mountPath: /data
+      restartPolicy: Never
+      volumes:
+      - name: test-volume
+        persistentVolumeClaim:
+          claimName: integrity-test-pvc
+    EOF
+    
+    # Wait for pod completion
+    kubectl wait --for=condition=Complete pod/integrity-test-pod --timeout=120s
+    
+    echo "Step 4: Verify test results"
+    kubectl logs integrity-test-pod
+    
+    echo "Step 5: Cleanup test resources"
+    kubectl delete pod/integrity-test-pod pvc/integrity-test-pvc
+    
+    echo "=== Data Integrity Verification Complete ==="
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: disaster-recovery-test
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    component: disaster-recovery
+spec:
+  # Run DR test monthly on the first day at 3 AM
+  schedule: "0 3 1 * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: dr-test
+            image: bitnami/kubectl:latest
+            command: ["/bin/bash"]
+            args:
+            - -c
+            - |
+              echo "Running automated disaster recovery test..."
+              # Create test backup
+              velero backup create dr-test-backup-$(date +%Y%m%d) --wait
+              
+              # Verify backup completion
+              velero backup describe dr-test-backup-$(date +%Y%m%d)
+              
+              # Test restore in isolated namespace
+              kubectl create namespace dr-test-$(date +%Y%m%d) || true
+              velero restore create dr-test-restore-$(date +%Y%m%d) \
+                --from-backup dr-test-backup-$(date +%Y%m%d) \
+                --namespace-mappings default:dr-test-$(date +%Y%m%d) \
+                --wait
+              
+              # Cleanup test resources
+              kubectl delete namespace dr-test-$(date +%Y%m%d)
+              velero backup delete dr-test-backup-$(date +%Y%m%d) --confirm
+              
+              echo "Disaster recovery test completed successfully"
+            volumeMounts:
+            - name: disaster-recovery-scripts
+              mountPath: /scripts
+          restartPolicy: OnFailure
+          volumes:
+          - name: disaster-recovery-scripts
+            configMap:
+              name: disaster-recovery-runbooks
+              defaultMode: 0755

@@ -1,0 +1,115 @@
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily-backup
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    backup.schedule: daily
+spec:
+  # Daily backup at 2 AM UTC
+  schedule: "0 2 * * *"
+  template:
+    metadata:
+      labels:
+        backup.schedule: daily
+    spec:
+      # Backup all namespaces except system ones
+      excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - local-path-storage
+      includedResources:
+      - persistentvolumes
+      - persistentvolumeclaims
+      - secrets
+      - configmaps
+      - deployments
+      - statefulsets
+      - services
+      storageLocation: default
+      volumeSnapshotLocations:
+      - default
+      ttl: 720h0m0s  # 30 days retention
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: weekly-full-backup
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    backup.schedule: weekly
+spec:
+  # Weekly full backup on Sundays at 1 AM UTC
+  schedule: "0 1 * * 0"
+  template:
+    metadata:
+      labels:
+        backup.schedule: weekly
+    spec:
+      # Include all resources
+      storageLocation: default
+      volumeSnapshotLocations:
+      - default
+      ttl: 2160h0m0s  # 90 days retention
+      snapshotVolumes: true
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: critical-data-backup
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    backup.schedule: critical
+spec:
+  # Critical data backup every 6 hours
+  schedule: "0 */6 * * *"
+  template:
+    metadata:
+      labels:
+        backup.schedule: critical
+        data-tier: critical
+    spec:
+      # Only backup critical namespaces and data
+      includedNamespaces:
+      - depin-ai-compute
+      - ai-models
+      - user-data
+      labelSelector:
+        matchLabels:
+          backup-tier: critical
+      storageLocation: default
+      volumeSnapshotLocations:
+      - default
+      ttl: 168h0m0s  # 7 days retention
+      snapshotVolumes: true
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: configuration-backup
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    backup.schedule: config
+spec:
+  # Configuration backup hourly
+  schedule: "0 * * * *"
+  template:
+    metadata:
+      labels:
+        backup.schedule: config
+    spec:
+      includedResources:
+      - configmaps
+      - secrets
+      - storageclasses
+      - persistentvolumes
+      excludedResources:
+      - pods
+      - services
+      storageLocation: default
+      ttl: 24h0m0s  # 1 day retention

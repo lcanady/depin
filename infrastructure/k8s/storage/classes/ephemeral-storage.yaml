@@ -1,0 +1,44 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ephemeral-storage
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    tier: ephemeral
+    storage-type: tmpfs
+    use-case: temporary-workloads
+spec:
+  provisioner: hostpath.csi.k8s.io
+  volumeBindingMode: Immediate
+  allowVolumeExpansion: false
+  reclaimPolicy: Delete
+  parameters:
+    # Ephemeral storage for temporary workloads
+    fstype: tmpfs
+    storage-type: "ephemeral"
+    performance-tier: "high"
+    # Auto-cleanup after use
+    cleanup-policy: "immediate"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: memory-storage
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    tier: memory
+    storage-type: in-memory
+    use-case: cache-temporary
+spec:
+  provisioner: hostpath.csi.k8s.io
+  volumeBindingMode: Immediate
+  allowVolumeExpansion: false
+  reclaimPolicy: Delete
+  parameters:
+    # In-memory storage for caching and temporary data
+    fstype: tmpfs
+    storage-type: "memory"
+    performance-tier: "extreme"
+    mount-options: "size=1G,nodev,nosuid,noexec"

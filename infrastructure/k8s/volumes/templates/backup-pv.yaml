@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: backup-pv-template
+  labels:
+    type: local
+    tier: backup
+    use-case: backup-recovery
+spec:
+  storageClassName: backup-storage
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteOnce
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /opt/local-path-provisioner/backup/cluster-backups
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-role.kubernetes.io/backup
+          operator: Exists
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-pvc-template
+  labels:
+    app: backup-system
+    tier: backup
+spec:
+  storageClassName: backup-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi
+  selector:
+    matchLabels:
+      tier: backup
+      use-case: backup-recovery

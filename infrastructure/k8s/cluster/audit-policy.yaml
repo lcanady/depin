@@ -1,0 +1,131 @@
+# Kubernetes audit policy for DePIN AI Compute cluster
+# This policy defines what events should be recorded and at what level
+
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+  # Log at RequestResponse level kubectl requests
+  - level: RequestResponse
+    namespaces: ["kube-system", "kube-public", "kube-node-lease"]
+    resources:
+      - group: ""
+        resources: ["pods", "services", "persistentvolumes", "persistentvolumeclaims"]
+    omitStages:
+      - RequestReceived
+
+  # Log the request body of configmap changes in kube-system
+  - level: Request
+    resources:
+      - group: ""
+        resources: ["configmaps"]
+    namespaces: ["kube-system"]
+
+  # Log configmap and secret changes in all other namespaces at the Metadata level
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+    omitStages:
+      - RequestReceived
+
+  # Log all other resources in core and extensions at the Metadata level
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["*"]
+    omitStages:
+      - RequestReceived
+
+  # Log all API server requests at the Request level for security analysis
+  - level: Request
+    users: ["system:serviceaccount:kube-system:generic-garbage-collector"]
+    resources:
+      - group: ""
+        resources: ["*"]
+
+  # Log authentication failures
+  - level: Metadata
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: "authentication.k8s.io"
+        resources: ["tokenreviews"]
+
+  # Log authorization decisions
+  - level: Metadata
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: "authorization.k8s.io"
+        resources: ["subjectaccessreviews"]
+
+  # Log admission controller webhook decisions
+  - level: RequestResponse
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: "admissionregistration.k8s.io"
+        resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+
+  # Log RBAC changes
+  - level: RequestResponse
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: "rbac.authorization.k8s.io"
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+
+  # Log workload resources at Metadata level
+  - level: Metadata
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: "apps"
+        resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+      - group: "batch"
+        resources: ["jobs", "cronjobs"]
+
+  # Log networking resources
+  - level: Metadata
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: "networking.k8s.io"
+        resources: ["networkpolicies", "ingresses"]
+
+  # Log custom resources for AI compute workloads
+  - level: Request
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: "depin.io"
+        resources: ["*"]
+
+  # Log node operations
+  - level: Metadata
+    omitStages:
+      - RequestReceived
+    resources:
+      - group: ""
+        resources: ["nodes", "nodes/status"]
+
+  # Don't log requests to certain non-resource URLs
+  - level: None
+    nonResourceURLs:
+      - /api*
+      - /version
+      - /healthz*
+      - /readyz*
+      - /livez*
+      - /metrics*
+
+  # Don't log events requests
+  - level: None
+    resources:
+      - group: ""
+        resources: ["events"]
+
+  # Catch-all rule to log all other requests at Metadata level
+  - level: Metadata
+    omitStages:
+      - RequestReceived

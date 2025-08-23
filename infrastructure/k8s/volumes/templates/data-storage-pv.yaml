@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: data-storage-pv-template
+  labels:
+    type: local
+    tier: standard
+    use-case: data-storage
+spec:
+  storageClassName: standard-storage
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteMany
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /opt/local-path-provisioner/standard/data-storage
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - storage-node-1
+          - storage-node-2
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-storage-pvc-template
+  labels:
+    app: depin-data
+    tier: standard
+spec:
+  storageClassName: standard-storage
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+  selector:
+    matchLabels:
+      tier: standard
+      use-case: data-storage

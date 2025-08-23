@@ -1,0 +1,39 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: standard-storage
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+  labels:
+    tier: standard
+    storage-type: hdd
+    use-case: general-purpose
+spec:
+  provisioner: hostpath.csi.k8s.io
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: true
+  reclaimPolicy: Delete
+  parameters:
+    # Standard storage for general workloads
+    fstype: ext4
+    storage-type: "standard"
+    performance-tier: "medium"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-standard
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    tier: standard
+    storage-type: local-hdd
+    use-case: general-purpose
+spec:
+  provisioner: rancher.io/local-path
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: false
+  reclaimPolicy: Delete
+  parameters:
+    # Local standard storage for general workloads
+    nodePath: /opt/local-path-provisioner/standard

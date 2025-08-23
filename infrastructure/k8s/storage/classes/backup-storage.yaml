@@ -1,0 +1,40 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: backup-storage
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    tier: backup
+    storage-type: archive
+    use-case: backup-recovery
+spec:
+  provisioner: hostpath.csi.k8s.io
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: true
+  reclaimPolicy: Retain
+  parameters:
+    # Long-term backup storage
+    fstype: ext4
+    storage-type: "backup"
+    performance-tier: "low"
+    compression: "true"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-backup
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    tier: backup
+    storage-type: local-archive
+    use-case: backup-recovery
+spec:
+  provisioner: rancher.io/local-path
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: false
+  reclaimPolicy: Retain
+  parameters:
+    # Local backup storage with retention policy
+    nodePath: /opt/local-path-provisioner/backup

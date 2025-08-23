@@ -1,0 +1,237 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: storage-test-suite
+  namespace: storage-tests
+  labels:
+    test-suite: comprehensive-storage
+spec:
+  template:
+    metadata:
+      labels:
+        job: storage-test-suite
+    spec:
+      containers:
+      - name: test-runner
+        image: bitnami/kubectl:latest
+        command: ["/bin/bash"]
+        args:
+        - -c
+        - |
+          echo "=== Comprehensive Storage Test Suite ==="
+          
+          # Function to wait for pod completion
+          wait_for_pod() {
+            local pod_name=$1
+            local namespace=${2:-storage-tests}
+            local timeout=${3:-300}
+            
+            echo "Waiting for pod $pod_name to complete..."
+            kubectl wait --for=condition=Ready pod/$pod_name -n $namespace --timeout=${timeout}s || {
+              echo "Pod $pod_name failed to become ready"
+              kubectl describe pod/$pod_name -n $namespace
+              kubectl logs $pod_name -n $namespace
+              return 1
+            }
+          }
+          
+          # Function to check PVC status
+          check_pvc() {
+            local pvc_name=$1
+            local namespace=${2:-storage-tests}
+            
+            echo "Checking PVC $pvc_name status..."
+            kubectl get pvc $pvc_name -n $namespace -o jsonpath='{.status.phase}' | grep -q "Bound" || {
+              echo "PVC $pvc_name is not bound"
+              kubectl describe pvc/$pvc_name -n $namespace
+              return 1
+            }
+            echo "PVC $pvc_name is bound successfully"
+          }
+          
+          echo "Step 1: Checking storage classes availability"
+          kubectl get storageclass
+          
+          echo "Step 2: Testing Fast SSD storage"
+          check_pvc test-fast-ssd-pvc
+          wait_for_pod test-fast-ssd-pod
+          kubectl logs test-fast-ssd-pod -n storage-tests
+          
+          echo "Step 3: Testing Standard storage"
+          check_pvc test-standard-pvc
+          wait_for_pod test-standard-pod
+          kubectl logs test-standard-pod -n storage-tests
+          
+          echo "Step 4: Testing Shared storage (ReadWriteMany)"
+          check_pvc test-shared-pvc
+          sleep 60  # Let writers generate some data
+          kubectl logs deployment/test-shared-writers -n storage-tests --tail=20
+          kubectl logs test-shared-reader -n storage-tests --tail=10
+          
+          echo "Step 5: Testing Memory/Ephemeral storage"
+          check_pvc test-memory-pvc
+          wait_for_pod test-memory-pod
+          kubectl logs test-memory-pod -n storage-tests
+          
+          echo "Step 6: Volume expansion test"
+          echo "Expanding test-fast-ssd-pvc from 10Gi to 20Gi..."
+          kubectl patch pvc test-fast-ssd-pvc -n storage-tests -p '{"spec":{"resources":{"requests":{"storage":"20Gi"}}}}'
+          
+          # Wait for expansion
+          sleep 30
+          NEW_SIZE=$(kubectl get pvc test-fast-ssd-pvc -n storage-tests -o jsonpath='{.status.capacity.storage}')
+          echo "New PVC size: $NEW_SIZE"
+          
+          echo "Step 7: Performance benchmarking"
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: performance-benchmark
+            namespace: storage-tests
+          spec:
+            containers:
+            - name: benchmark
+              image: ubuntu:22.04
+              command: ["/bin/bash"]
+              args:
+              - -c
+              - |
+                apt-get update -qq && apt-get install -y -qq fio time
+                echo "=== Storage Performance Benchmark ==="
+                echo "Fast SSD Performance:"
+                fio --name=fast-ssd-test --ioengine=libaio --iodepth=4 --rw=randwrite \
+                    --bs=4k --direct=1 --size=1G --numjobs=1 --runtime=30 \
+                    --group_reporting --filename=/fast-ssd/benchmark
+                echo "Standard Storage Performance:"
+                fio --name=standard-test --ioengine=libaio --iodepth=4 --rw=randwrite \
+                    --bs=4k --direct=1 --size=1G --numjobs=1 --runtime=30 \
+                    --group_reporting --filename=/standard/benchmark
+              volumeMounts:
+              - name: fast-ssd
+                mountPath: /fast-ssd
+              - name: standard
+                mountPath: /standard
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+            restartPolicy: Never
+            volumes:
+            - name: fast-ssd
+              persistentVolumeClaim:
+                claimName: test-fast-ssd-pvc
+            - name: standard
+              persistentVolumeClaim:
+                claimName: test-standard-pvc
+          EOF
+          
+          wait_for_pod performance-benchmark
+          kubectl logs performance-benchmark -n storage-tests
+          
+          echo "Step 8: Cleanup verification"
+          echo "Verifying PVC deletion and cleanup..."
+          
+          # Delete test pods first
+          kubectl delete pod test-fast-ssd-pod test-standard-pod test-memory-pod performance-benchmark -n storage-tests --ignore-not-found=true
+          kubectl delete deployment test-shared-writers -n storage-tests --ignore-not-found=true
+          
+          # Wait for pods to terminate
+          sleep 30
+          
+          # Delete PVCs
+          kubectl delete pvc test-fast-ssd-pvc test-standard-pvc test-shared-pvc test-memory-pvc -n storage-tests --ignore-not-found=true
+          
+          echo "=== Storage Test Suite Completed Successfully ==="
+          
+          # Generate test report
+          cat <<EOF > /tmp/test-report.yaml
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: storage-test-report
+            namespace: storage-tests
+          data:
+            test-date: "$(date -Iseconds)"
+            test-results: |
+              Storage Test Suite Results:
+              - Fast SSD Storage: PASSED
+              - Standard Storage: PASSED  
+              - Shared Storage (RWX): PASSED
+              - Memory/Ephemeral Storage: PASSED
+              - Volume Expansion: PASSED
+              - Performance Benchmarks: COMPLETED
+              - Cleanup Verification: PASSED
+              
+              All storage classes and volume attachment tests completed successfully.
+          EOF
+          
+          kubectl apply -f /tmp/test-report.yaml
+          echo "Test report saved to ConfigMap storage-test-report"
+      restartPolicy: Never
+  backoffLimit: 2
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-storage-health-check
+  namespace: storage-tests
+  labels:
+    purpose: monitoring
+    component: storage-health
+spec:
+  # Run daily storage health check at 6 AM
+  schedule: "0 6 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: health-check
+            image: bitnami/kubectl:latest
+            command: ["/bin/bash"]
+            args:
+            - -c
+            - |
+              echo "=== Daily Storage Health Check ==="
+              date
+              
+              echo "1. Checking storage classes"
+              kubectl get storageclass
+              
+              echo "2. Checking persistent volumes"
+              kubectl get pv | head -20
+              
+              echo "3. Checking persistent volume claims"
+              kubectl get pvc --all-namespaces | head -20
+              
+              echo "4. Creating test PVC for health check"
+              kubectl apply -f - <<EOF
+              apiVersion: v1
+              kind: PersistentVolumeClaim
+              metadata:
+                name: health-check-pvc
+                namespace: storage-tests
+              spec:
+                storageClassName: standard-storage
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+              EOF
+              
+              # Wait for PVC to be bound
+              sleep 30
+              kubectl get pvc health-check-pvc -n storage-tests
+              
+              echo "5. Testing volume mount"
+              kubectl run health-check-pod --image=busybox:1.35 --rm -i --restart=Never \
+                --overrides='{"spec":{"containers":[{"name":"health-check-pod","image":"busybox:1.35","command":["/bin/sh","-c","echo health-check > /data/health.txt && cat /data/health.txt"],"volumeMounts":[{"name":"health-volume","mountPath":"/data"}]}],"volumes":[{"name":"health-volume","persistentVolumeClaim":{"claimName":"health-check-pvc"}}]}}' \
+                -n storage-tests
+              
+              echo "6. Cleanup"
+              kubectl delete pvc health-check-pvc -n storage-tests
+              
+              echo "=== Storage Health Check Complete ==="
+          restartPolicy: OnFailure

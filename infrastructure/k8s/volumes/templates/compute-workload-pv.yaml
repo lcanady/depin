@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: compute-workload-pv-template
+  labels:
+    type: local
+    tier: high-performance
+    use-case: ai-compute
+spec:
+  storageClassName: fast-ssd
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  hostPath:
+    path: /opt/local-path-provisioner/fast-ssd/compute-workloads
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - worker-node-1
+          - worker-node-2
+          - worker-node-3
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: compute-workload-pvc-template
+  labels:
+    app: ai-compute
+    tier: high-performance
+spec:
+  storageClassName: fast-ssd
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  selector:
+    matchLabels:
+      tier: high-performance
+      use-case: ai-compute

@@ -1,0 +1,252 @@
+# Calico CNI configuration for DePIN AI Compute cluster
+# This configuration provides secure and scalable networking for AI workloads
+
+---
+# Calico ConfigMap for custom configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: calico-config
+  namespace: kube-system
+data:
+  # Configure NodeToNodeMesh
+  calico_backend: "bird"
+  
+  # Configure the IP Pool from which Pod IPs will be chosen
+  cni_network_config: |-
+    {
+      "name": "k8s-pod-network",
+      "cniVersion": "0.3.1",
+      "plugins": [
+        {
+          "type": "calico",
+          "log_level": "info",
+          "log_file_path": "/var/log/calico/cni/cni.log",
+          "datastore_type": "kubernetes",
+          "nodename": "__KUBERNETES_NODE_NAME__",
+          "mtu": __CNI_MTU__,
+          "ipam": {
+              "type": "calico-ipam"
+          },
+          "policy": {
+              "type": "k8s"
+          },
+          "kubernetes": {
+              "kubeconfig": "__KUBECONFIG_FILEPATH__"
+          }
+        },
+        {
+          "type": "portmap",
+          "snat": true,
+          "capabilities": {"portMappings": true}
+        },
+        {
+          "type": "bandwidth",
+          "capabilities": {"bandwidth": true}
+        }
+      ]
+    }
+
+  # Configure Felix (Calico's daemon)
+  felix_config: |-
+    # Felix configuration options
+    felix_logging_level: "Info"
+    felix_healthenabled: "true"
+    felix_healthhost: "localhost"
+    felix_healthport: "9099"
+    felix_prometheusmetricshost: "0.0.0.0"
+    felix_prometheusmetricsport: "9091"
+    felix_prometheusmetricsenabled: "true"
+    felix_reportinginterval: "60s"
+    felix_ipinipttl: "20"
+    felix_vxlanvni: "4096"
+    felix_ignorelooserpf: "false"
+    felix_chaininsertmode: "insert"
+
+---
+# Calico IP Pool configuration
+apiVersion: projectcalico.org/v3
+kind: IPPool
+metadata:
+  name: default-ipv4-ippool
+spec:
+  cidr: 10.244.0.0/16
+  ipipMode: CrossSubnet
+  vxlanMode: Never
+  natOutgoing: true
+  disabled: false
+  nodeSelector: all()
+  blockSize: 26
+
+---
+# Calico Felix Configuration
+apiVersion: projectcalico.org/v3
+kind: FelixConfiguration
+metadata:
+  name: default
+spec:
+  logSeverityScreen: Info
+  healthEnabled: true
+  healthHost: localhost
+  healthPort: 9099
+  prometheusMetricsEnabled: true
+  prometheusMetricsHost: 0.0.0.0
+  prometheusMetricsPort: 9091
+  reportingInterval: 60s
+  ipInIpTtl: 20
+  vxlanVNI: 4096
+  ignoreLooseRPF: false
+  chainInsertMode: insert
+  bpfLogLevel: ""
+  bpfEnabled: false
+  # Security hardening
+  defaultEndpointToHostAction: ACCEPT
+  failsafeInboundHostPorts:
+  - protocol: tcp
+    port: 22
+  - protocol: udp
+    port: 68
+  - protocol: tcp
+    port: 6443
+  - protocol: tcp
+    port: 2379
+  - protocol: tcp
+    port: 2380
+  - protocol: tcp
+    port: 10250
+  - protocol: tcp
+    port: 10251
+  - protocol: tcp
+    port: 10252
+  - protocol: tcp
+    port: 179
+  failsafeOutboundHostPorts:
+  - protocol: tcp
+    port: 22
+  - protocol: udp
+    port: 53
+  - protocol: udp
+    port: 67
+  - protocol: tcp
+    port: 179
+  - protocol: tcp
+    port: 2379
+  - protocol: tcp
+    port: 2380
+  - protocol: tcp
+    port: 6443
+  - protocol: tcp
+    port: 6666
+  - protocol: tcp
+    port: 6667
+
+---
+# Calico BGP Configuration
+apiVersion: projectcalico.org/v3
+kind: BGPConfiguration
+metadata:
+  name: default
+spec:
+  logSeverityScreen: Info
+  nodeToNodeMeshEnabled: true
+  asNumber: 64512
+
+---
+# Global Network Policy for security
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: deny-all-non-system
+spec:
+  order: 1000
+  selector: '!has(label-name) || label-name != "system"'
+  types:
+  - Ingress
+  - Egress
+  egress:
+  # Allow DNS
+  - action: Allow
+    protocol: UDP
+    destination:
+      selector: k8s-app == "kube-dns"
+      ports:
+      - 53
+  - action: Allow
+    protocol: TCP
+    destination:
+      selector: k8s-app == "kube-dns" 
+      ports:
+      - 53
+  # Allow access to Kubernetes API server
+  - action: Allow
+    protocol: TCP
+    destination:
+      nets:
+      - 10.96.0.1/32
+      ports:
+      - 443
+
+---
+# Network Policy to allow system pods communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-system-pods
+  namespace: kube-system
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - {}
+  egress:
+  - {}
+
+---
+# Network Policy template for AI compute workloads
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-compute-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-compute
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from same namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: default
+  # Allow ingress from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow HTTPS
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow communication within cluster
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 8080

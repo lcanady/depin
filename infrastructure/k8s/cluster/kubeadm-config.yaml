@@ -1,0 +1,179 @@
+# Kubeadm configuration for DePIN AI Compute cluster
+# This configuration sets up a highly available control plane with external etcd
+
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "CONTROL_PLANE_IP"  # Replace with actual IP
+  bindPort: 6443
+nodeRegistration:
+  kubeletExtraArgs:
+    cloud-provider: external
+    read-only-port: "0"
+    anonymous-auth: "false"
+    protect-kernel-defaults: "true"
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: v1.28.0
+clusterName: depin-ai-compute
+controlPlaneEndpoint: "LOAD_BALANCER_IP:6443"  # Replace with load balancer IP
+networking:
+  serviceSubnet: "10.96.0.0/16"
+  podSubnet: "10.244.0.0/16"
+  dnsDomain: "cluster.local"
+apiServer:
+  bindPort: 6443
+  certSANs:
+    - "LOAD_BALANCER_IP"  # Replace with load balancer IP
+    - "CONTROL_PLANE_1_IP"  # Replace with actual IPs
+    - "CONTROL_PLANE_2_IP"
+    - "CONTROL_PLANE_3_IP"
+    - "depin-api.local"
+    - "localhost"
+    - "127.0.0.1"
+  extraArgs:
+    cloud-provider: external
+    enable-admission-plugins: "NodeRestriction,PodSecurityPolicy,ResourceQuota,LimitRanger"
+    audit-log-maxage: "30"
+    audit-log-maxbackup: "3"
+    audit-log-maxsize: "100"
+    audit-log-path: "/var/log/audit.log"
+    audit-policy-file: "/etc/kubernetes/audit-policy.yaml"
+    profiling: "false"
+    kubelet-certificate-authority: "/etc/kubernetes/pki/ca.crt"
+    service-account-key-file: "/etc/kubernetes/pki/sa.pub"
+    service-account-signing-key-file: "/etc/kubernetes/pki/sa.key"
+    tls-min-version: "VersionTLS12"
+  extraVolumes:
+    - name: audit-log
+      hostPath: "/var/log/audit.log"
+      mountPath: "/var/log/audit.log"
+      readOnly: false
+      pathType: FileOrCreate
+    - name: audit-policy
+      hostPath: "/etc/kubernetes/audit-policy.yaml"
+      mountPath: "/etc/kubernetes/audit-policy.yaml"
+      readOnly: true
+      pathType: File
+controllerManager:
+  extraArgs:
+    cloud-provider: external
+    profiling: "false"
+    terminated-pod-gc-threshold: "10"
+    use-service-account-credentials: "true"
+    bind-address: "0.0.0.0"
+scheduler:
+  extraArgs:
+    profiling: "false"
+    bind-address: "0.0.0.0"
+etcd:
+  local:
+    dataDir: "/var/lib/etcd"
+    extraArgs:
+      listen-metrics-urls: "http://0.0.0.0:2381"
+dns:
+  type: CoreDNS
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: KubeletConfiguration
+authentication:
+  anonymous:
+    enabled: false
+  webhook:
+    enabled: true
+    cacheTTL: 2m0s
+  x509:
+    clientCAFile: "/etc/kubernetes/pki/ca.crt"
+authorization:
+  mode: Webhook
+  webhook:
+    cacheAuthorizedTTL: 300s
+    cacheUnauthorizedTTL: 30s
+cgroupDriver: systemd
+clusterDNS:
+  - "10.96.0.10"
+clusterDomain: cluster.local
+containerLogMaxFiles: 5
+containerLogMaxSize: 10Mi
+contentType: application/vnd.kubernetes.protobuf
+cpuCFSQuota: true
+cpuCFSQuotaPeriod: 100ms
+cpuManagerPolicy: static
+eventRecordQPS: 0
+evictionHard:
+  imagefs.available: 15%
+  memory.available: 100Mi
+  nodefs.available: 10%
+  nodefs.inodesFree: 5%
+evictionPressureTransitionPeriod: 5m0s
+failSwapOn: false
+fileCheckFrequency: 20s
+hairpinMode: promiscuous-bridge
+healthzBindAddress: 127.0.0.1
+healthzPort: 10248
+httpCheckFrequency: 20s
+imageGCHighThresholdPercent: 85
+imageGCLowThresholdPercent: 80
+kubeAPIQPS: 50
+kubeAPIBurst: 100
+makeIPTablesUtilChains: true
+maxOpenFiles: 1000000
+maxPods: 110
+nodeLeaseDurationSeconds: 40
+nodeStatusReportFrequency: 1m0s
+nodeStatusUpdateFrequency: 10s
+protectKernelDefaults: true
+readOnlyPort: 0
+registryPullQPS: 5
+registryBurst: 10
+resolvConf: /etc/resolv.conf
+rotateCertificates: true
+runtimeRequestTimeout: 2m0s
+serializeImagePulls: false
+shutdownGracePeriod: 0s
+shutdownGracePeriodCriticalPods: 0s
+staticPodPath: /etc/kubernetes/manifests
+streamingConnectionIdleTimeout: 4h0m0s
+syncFrequency: 1m0s
+volumeStatsAggPeriod: 1m0s
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+bindAddress: 0.0.0.0
+clientConnection:
+  acceptContentTypes: ""
+  burst: 10
+  contentType: application/vnd.kubernetes.protobuf
+  kubeconfig: /var/lib/kube-proxy/kubeconfig.conf
+  qps: 5
+clusterCIDR: "10.244.0.0/16"
+configSyncPeriod: 15m0s
+conntrack:
+  maxPerCore: 32768
+  min: 131072
+  tcpCloseWaitTimeout: 1h0m0s
+  tcpEstablishedTimeout: 24h0m0s
+enableProfiling: false
+healthzBindAddress: 0.0.0.0:10256
+iptables:
+  masqueradeAll: false
+  masqueradeBit: 14
+  minSyncPeriod: 0s
+  syncPeriod: 30s
+ipvs:
+  excludeCIDRs: []
+  minSyncPeriod: 0s
+  scheduler: "rr"
+  syncPeriod: 30s
+  strictARP: false
+metricsBindAddress: 127.0.0.1:10249
+mode: "iptables"
+nodePortAddresses: []
+oomScoreAdj: -999
+portRange: ""
+udpIdleTimeout: 250ms
+winkernel:
+  enableDSR: false
+  networkName: ""
+  sourceVip: ""

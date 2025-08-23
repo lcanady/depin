@@ -1,0 +1,278 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: storage-tests
+  labels:
+    purpose: testing
+    component: storage
+---
+# Test 1: Fast SSD Storage Attachment
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-fast-ssd-pvc
+  namespace: storage-tests
+  labels:
+    test: fast-ssd-attachment
+spec:
+  storageClassName: fast-ssd
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-fast-ssd-pod
+  namespace: storage-tests
+  labels:
+    test: fast-ssd-attachment
+spec:
+  containers:
+  - name: test-container
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args: 
+    - -c
+    - |
+      echo "=== Fast SSD Volume Test ==="
+      echo "Mounting fast SSD volume..."
+      df -h /data
+      echo "Writing test data..."
+      time dd if=/dev/zero of=/data/test-file bs=1M count=100
+      echo "Reading test data..."
+      time dd if=/data/test-file of=/dev/null bs=1M
+      echo "Calculating MD5 checksum..."
+      md5sum /data/test-file
+      echo "Fast SSD test completed successfully"
+      sleep 300
+    volumeMounts:
+    - name: fast-ssd-volume
+      mountPath: /data
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+  restartPolicy: Never
+  volumes:
+  - name: fast-ssd-volume
+    persistentVolumeClaim:
+      claimName: test-fast-ssd-pvc
+---
+# Test 2: Standard Storage Attachment
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-standard-pvc
+  namespace: storage-tests
+  labels:
+    test: standard-storage-attachment
+spec:
+  storageClassName: standard-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-standard-pod
+  namespace: storage-tests
+  labels:
+    test: standard-storage-attachment
+spec:
+  containers:
+  - name: test-container
+    image: ubuntu:22.04
+    command: ["/bin/bash"]
+    args: 
+    - -c
+    - |
+      echo "=== Standard Storage Volume Test ==="
+      echo "Installing test tools..."
+      apt-get update -qq && apt-get install -y -qq fio
+      
+      echo "Testing volume mount..."
+      df -h /data
+      
+      echo "Running I/O performance test..."
+      fio --name=test --ioengine=libaio --iodepth=1 --rw=randrw --bs=4k \
+          --direct=1 --size=1G --numjobs=1 --runtime=60 --group_reporting \
+          --filename=/data/test-file
+      
+      echo "Testing data persistence..."
+      echo "persistent-data-$(date)" > /data/persistence-test.txt
+      cat /data/persistence-test.txt
+      
+      echo "Standard storage test completed successfully"
+      sleep 300
+    volumeMounts:
+    - name: standard-volume
+      mountPath: /data
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 200m
+      limits:
+        memory: 1Gi
+        cpu: 1
+  restartPolicy: Never
+  volumes:
+  - name: standard-volume
+    persistentVolumeClaim:
+      claimName: test-standard-pvc
+---
+# Test 3: Multi-Pod Shared Storage (ReadWriteMany)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-shared-pvc
+  namespace: storage-tests
+  labels:
+    test: shared-storage-attachment
+spec:
+  storageClassName: standard-storage
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-shared-writers
+  namespace: storage-tests
+  labels:
+    test: shared-storage-attachment
+    role: writer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: shared-test-writer
+  template:
+    metadata:
+      labels:
+        app: shared-test-writer
+        test: shared-storage-attachment
+    spec:
+      containers:
+      - name: writer-container
+        image: busybox:1.35
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          HOSTNAME=$(hostname)
+          echo "Writer $HOSTNAME starting..."
+          while true; do
+            echo "$HOSTNAME: $(date)" >> /shared/writers.log
+            echo "$HOSTNAME wrote to shared storage at $(date)"
+            sleep 5
+          done
+        volumeMounts:
+        - name: shared-volume
+          mountPath: /shared
+      volumes:
+      - name: shared-volume
+        persistentVolumeClaim:
+          claimName: test-shared-pvc
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-shared-reader
+  namespace: storage-tests
+  labels:
+    test: shared-storage-attachment
+    role: reader
+spec:
+  containers:
+  - name: reader-container
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "Shared storage reader starting..."
+      sleep 30  # Let writers create some data
+      echo "=== Reading shared data ==="
+      tail -f /shared/writers.log
+    volumeMounts:
+    - name: shared-volume
+      mountPath: /shared
+      readOnly: true
+  restartPolicy: Never
+  volumes:
+  - name: shared-volume
+    persistentVolumeClaim:
+      claimName: test-shared-pvc
+---
+# Test 4: Memory/Ephemeral Storage Test
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-memory-pvc
+  namespace: storage-tests
+  labels:
+    test: memory-storage-attachment
+spec:
+  storageClassName: memory-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-memory-pod
+  namespace: storage-tests
+  labels:
+    test: memory-storage-attachment
+spec:
+  containers:
+  - name: test-container
+    image: busybox:1.35
+    command: ["/bin/sh"]
+    args:
+    - -c
+    - |
+      echo "=== Memory Storage Volume Test ==="
+      echo "Testing in-memory filesystem..."
+      df -h /memory
+      
+      echo "Writing to memory storage..."
+      time dd if=/dev/zero of=/memory/speed-test bs=1M count=100
+      echo "Memory write completed"
+      
+      echo "Reading from memory storage..."
+      time dd if=/memory/speed-test of=/dev/null bs=1M
+      echo "Memory read completed"
+      
+      echo "Memory storage test completed successfully"
+      sleep 60
+    volumeMounts:
+    - name: memory-volume
+      mountPath: /memory
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+  restartPolicy: Never
+  volumes:
+  - name: memory-volume
+    persistentVolumeClaim:
+      claimName: test-memory-pvc

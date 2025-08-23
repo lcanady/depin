@@ -1,0 +1,303 @@
+# Enhanced CoreDNS configuration for DePIN AI Compute cluster
+# This configuration provides robust DNS services with caching and monitoring
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+  labels:
+    eks.amazonaws.com/component: coredns
+    k8s-app: kube-dns
+data:
+  Corefile: |
+    .:53 {
+        # Enable error logging
+        errors
+        
+        # Health check endpoint
+        health {
+            lameduck 5s
+        }
+        
+        # Ready check endpoint
+        ready
+        
+        # Kubernetes plugin for cluster.local domain
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+            pods insecure
+            fallthrough in-addr.arpa ip6.arpa
+            ttl 30
+        }
+        
+        # Prometheus metrics
+        prometheus :9153
+        
+        # Forward to upstream DNS with retry logic
+        forward . 8.8.8.8 8.8.4.4 1.1.1.1 1.0.0.1 {
+            max_concurrent 1000
+            policy round_robin
+            health_check 5s
+        }
+        
+        # Enable caching with custom TTL
+        cache 30 {
+            success 9984 30
+            denial 9984 5
+        }
+        
+        # Auto-reload configuration on changes
+        reload
+        
+        # Enable query logging for debugging (can be disabled in production)
+        log . {
+            class denial error
+        }
+        
+        # Load balance requests
+        loadbalance
+        
+        # Rewrite rules for internal services
+        rewrite name regex (.*)\.depin\.local {1}.default.svc.cluster.local
+        
+        # Template for custom domain resolution
+        template IN A depin-api.local {
+            match depin-api\.local
+            answer "{{ .Name }} 60 IN A 10.96.0.1"
+            fallthrough
+        }
+        
+        # Autopath for faster FQDN resolution
+        autopath @kubernetes
+    }
+    
+    # Custom zone for DePIN services
+    depin.local:53 {
+        errors
+        
+        # Define custom records for DePIN infrastructure
+        file /etc/coredns/depin.db depin.local
+        
+        # Enable caching for custom zone
+        cache 300 {
+            success 9984 300
+            denial 9984 30
+        }
+        
+        # Metrics for custom zone
+        prometheus :9153
+        
+        reload
+    }
+    
+    # Import additional configuration files if they exist
+    import /etc/coredns/custom/*.conf
+
+---
+# Custom zone file for DePIN services
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom-depin
+  namespace: kube-system
+data:
+  depin.db: |
+    $ORIGIN depin.local.
+    @    3600 IN SOA sns.dns.icann.org. noc.dns.icann.org. (
+                                2024010101 ; serial number
+                                3600       ; refresh
+                                1800       ; retry
+                                604800     ; expire
+                                86400      ; minimum TTL
+                                )
+                             
+    ; Nameserver records
+    @                        IN NS      ns1.depin.local.
+    @                        IN NS      ns2.depin.local.
+    
+    ; A records for infrastructure services
+    api                      IN A       10.96.0.100
+    compute                  IN A       10.96.0.101
+    storage                  IN A       10.96.0.102
+    monitoring               IN A       10.96.0.103
+    logging                  IN A       10.96.0.104
+    
+    ; CNAME records for service discovery
+    www                      IN CNAME   api.depin.local.
+    dashboard                IN CNAME   monitoring.depin.local.
+    logs                     IN CNAME   logging.depin.local.
+    
+    ; SRV records for service discovery
+    _api._tcp                IN SRV     10 60 8080 api.depin.local.
+    _compute._tcp            IN SRV     10 60 8080 compute.depin.local.
+    _monitoring._tcp         IN SRV     10 60 9090 monitoring.depin.local.
+
+---
+# Enhanced CoreDNS deployment with high availability
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coredns-enhanced
+  namespace: kube-system
+  labels:
+    k8s-app: kube-dns-enhanced
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: "CoreDNS"
+spec:
+  # Strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  replicas: 3  # High availability with 3 replicas
+  selector:
+    matchLabels:
+      k8s-app: kube-dns-enhanced
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-dns-enhanced
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9153"
+        prometheus.io/path: "/metrics"
+    spec:
+      priorityClassName: system-cluster-critical
+      serviceAccountName: coredns
+      tolerations:
+        - key: "CriticalAddonsOnly"
+          operator: "Exists"
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+      nodeSelector:
+        kubernetes.io/os: linux
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: k8s-app
+                  operator: In
+                  values: ["kube-dns-enhanced"]
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: coredns
+        image: coredns/coredns:1.10.1
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            memory: 170Mi
+            cpu: 100m
+          requests:
+            cpu: 100m
+            memory: 70Mi
+        args: [ "-conf", "/etc/coredns/Corefile" ]
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/coredns
+          readOnly: true
+        - name: custom-config-volume
+          mountPath: /etc/coredns/custom
+          readOnly: true
+        ports:
+        - containerPort: 53
+          name: dns
+          protocol: UDP
+        - containerPort: 53
+          name: dns-tcp
+          protocol: TCP
+        - containerPort: 9153
+          name: metrics
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8181
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 2
+          successThreshold: 1
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            drop:
+            - all
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+      dnsPolicy: Default
+      volumes:
+        - name: config-volume
+          configMap:
+            name: coredns
+            items:
+            - key: Corefile
+              path: Corefile
+        - name: custom-config-volume
+          configMap:
+            name: coredns-custom-depin
+            items:
+            - key: depin.db
+              path: depin.db
+
+---
+# Service for enhanced CoreDNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-dns-enhanced
+  namespace: kube-system
+  annotations:
+    prometheus.io/port: "9153"
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+  labels:
+    k8s-app: kube-dns-enhanced
+    kubernetes.io/cluster-service: "true"
+    kubernetes.io/name: "CoreDNS-Enhanced"
+spec:
+  selector:
+    k8s-app: kube-dns-enhanced
+  clusterIP: 10.96.0.10
+  ports:
+  - name: dns
+    port: 53
+    protocol: UDP
+  - name: dns-tcp
+    port: 53
+    protocol: TCP
+  - name: metrics
+    port: 9153
+    protocol: TCP
+
+---
+# ServiceMonitor for Prometheus integration
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: coredns-enhanced
+  namespace: kube-system
+  labels:
+    app: coredns-enhanced
+spec:
+  selector:
+    matchLabels:
+      k8s-app: kube-dns-enhanced
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
