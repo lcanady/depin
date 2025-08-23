@@ -1,0 +1,123 @@
+# Security Context Constraints for DePIN AI Compute Infrastructure
+# These SCCs provide OpenShift-compatible security constraints that can be used
+# alongside Pod Security Standards for enhanced security
+
+# Restricted SCC for cryptographic workloads
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: depin-scc-restricted
+  labels:
+    depin.ai/security-level: restricted
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: false
+allowedCapabilities: null
+defaultAddCapabilities: null
+requiredDropCapabilities:
+- ALL
+fsGroup:
+  type: MustRunAs
+  ranges:
+  - min: 10000
+    max: 65535
+readOnlyRootFilesystem: true
+runAsUser:
+  type: MustRunAsNonRoot
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: MustRunAs
+  ranges:
+  - min: 10000
+    max: 65535
+volumes:
+- configMap
+- downwardAPI
+- emptyDir
+- persistentVolumeClaim
+- projected
+- secret
+
+---
+# Baseline SCC for AI compute workloads
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: depin-scc-baseline
+  labels:
+    depin.ai/security-level: baseline
+allowHostDirVolumePlugin: true
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: false
+allowedCapabilities:
+- NET_BIND_SERVICE
+defaultAddCapabilities: null
+requiredDropCapabilities:
+- SYS_ADMIN
+- SYS_TIME
+- NET_ADMIN
+fsGroup:
+  type: RunAsAny
+readOnlyRootFilesystem: false
+runAsUser:
+  type: MustRunAsNonRoot
+seLinuxContext:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+volumes:
+- configMap
+- downwardAPI
+- emptyDir
+- hostPath
+- persistentVolumeClaim
+- projected
+- secret
+allowedHostPaths:
+- pathPrefix: "/tmp"
+  readOnly: false
+- pathPrefix: "/var/lib/depin"
+  readOnly: false
+
+---
+# Privileged SCC for system components
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: depin-scc-privileged
+  labels:
+    depin.ai/security-level: privileged
+allowHostDirVolumePlugin: true
+allowHostIPC: true
+allowHostNetwork: true
+allowHostPID: true
+allowHostPorts: true
+allowPrivilegedContainer: true
+allowPrivilegeEscalation: true
+allowedCapabilities:
+- "*"
+defaultAddCapabilities: null
+requiredDropCapabilities: null
+fsGroup:
+  type: RunAsAny
+readOnlyRootFilesystem: false
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+volumes:
+- "*"
+allowedHostPaths:
+- pathPrefix: "/"
+  readOnly: false

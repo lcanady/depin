@@ -1,0 +1,286 @@
+# Open Policy Agent (OPA) Gatekeeper for DePIN Policy Enforcement
+# This configuration deploys OPA Gatekeeper for advanced policy enforcement
+
+# Gatekeeper system namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeper-system
+  labels:
+    control-plane: controller-manager
+    gatekeeper.sh/system: "yes"
+    depin.ai/component: policy-engine
+
+---
+# ConstraintTemplate for DePIN Pod Security Requirements
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: depinpodsecurity
+  namespace: gatekeeper-system
+  labels:
+    depin.ai/policy-type: security
+spec:
+  crd:
+    spec:
+      names:
+        kind: DePinPodSecurity
+      validation:
+        type: object
+        properties:
+          allowedSecurityContexts:
+            type: array
+            items:
+              type: object
+              properties:
+                runAsNonRoot:
+                  type: boolean
+                runAsUser:
+                  type: object
+                  properties:
+                    min:
+                      type: integer
+                    max:
+                      type: integer
+                readOnlyRootFilesystem:
+                  type: boolean
+                allowPrivilegeEscalation:
+                  type: boolean
+          requiredLabels:
+            type: array
+            items:
+              type: string
+          forbiddenCapabilities:
+            type: array
+            items:
+              type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package depinpodsecurity
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            not container.securityContext.runAsNonRoot
+            msg := "Containers must run as non-root user"
+        }
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            container.securityContext.allowPrivilegeEscalation == true
+            msg := "Containers must not allow privilege escalation"
+        }
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            not container.securityContext.readOnlyRootFilesystem
+            msg := "Containers must have read-only root filesystem"
+        }
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            capability := container.securityContext.capabilities.add[_]
+            capability in input.parameters.forbiddenCapabilities
+            msg := sprintf("Container uses forbidden capability: %v", [capability])
+        }
+
+        violation[{"msg": msg}] {
+            required := input.parameters.requiredLabels[_]
+            not input.review.object.metadata.labels[required]
+            msg := sprintf("Missing required label: %v", [required])
+        }
+
+---
+# DePIN AI Compute Pod Security Constraint
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: DePinPodSecurity
+metadata:
+  name: depin-ai-compute-security
+  labels:
+    depin.ai/policy-type: security
+    depin.ai/namespace: ai-compute
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["depin-ai-compute"]
+  parameters:
+    requiredLabels:
+      - "depin.ai/workload-type"
+      - "depin.ai/security-level"
+    forbiddenCapabilities:
+      - "SYS_ADMIN"
+      - "SYS_TIME"
+      - "NET_ADMIN"
+      - "SYS_MODULE"
+
+---
+# ConstraintTemplate for DePIN Network Policy Enforcement
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: depinnetworkpolicy
+  namespace: gatekeeper-system
+  labels:
+    depin.ai/policy-type: network
+spec:
+  crd:
+    spec:
+      names:
+        kind: DePinNetworkPolicy
+      validation:
+        type: object
+        properties:
+          requiredNetworkPolicies:
+            type: array
+            items:
+              type: string
+          allowedPorts:
+            type: array
+            items:
+              type: integer
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package depinnetworkpolicy
+
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "NetworkPolicy"
+            not input.review.object.metadata.labels["depin.ai/approved"]
+            msg := "NetworkPolicy must have depin.ai/approved label"
+        }
+
+        violation[{"msg": msg}] {
+            input.review.kind.kind == "Service"
+            service := input.review.object
+            port := service.spec.ports[_]
+            not port.port in input.parameters.allowedPorts
+            msg := sprintf("Service uses non-approved port: %v", [port.port])
+        }
+
+---
+# DePIN Network Policy Constraint
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: DePinNetworkPolicy
+metadata:
+  name: depin-network-policy-enforcement
+  labels:
+    depin.ai/policy-type: network
+spec:
+  match:
+    kinds:
+      - apiGroups: ["networking.k8s.io"]
+        kinds: ["NetworkPolicy"]
+      - apiGroups: [""]
+        kinds: ["Service"]
+    namespaces: ["depin-ai-compute", "depin-edge", "depin-secure"]
+  parameters:
+    allowedPorts: [80, 443, 8080, 8443, 6379, 5432, 9090, 9200]
+
+---
+# ConstraintTemplate for DePIN Resource Quotas
+apiVersion: templates.gatekeeper.sh/v1beta1
+kind: ConstraintTemplate
+metadata:
+  name: depinresourcequota
+  namespace: gatekeeper-system
+  labels:
+    depin.ai/policy-type: resource-management
+spec:
+  crd:
+    spec:
+      names:
+        kind: DePinResourceQuota
+      validation:
+        type: object
+        properties:
+          maxCpu:
+            type: string
+          maxMemory:
+            type: string
+          maxGpu:
+            type: integer
+          requiredResources:
+            type: array
+            items:
+              type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package depinresourcequota
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            not container.resources.requests.cpu
+            msg := "Container must specify CPU requests"
+        }
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            not container.resources.requests.memory
+            msg := "Container must specify memory requests"
+        }
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            cpu_limit := container.resources.limits.cpu
+            max_cpu := input.parameters.maxCpu
+            cpu_exceeds_limit(cpu_limit, max_cpu)
+            msg := sprintf("Container CPU limit %v exceeds maximum %v", [cpu_limit, max_cpu])
+        }
+
+        violation[{"msg": msg}] {
+            container := input.review.object.spec.containers[_]
+            memory_limit := container.resources.limits.memory
+            max_memory := input.parameters.maxMemory
+            memory_exceeds_limit(memory_limit, max_memory)
+            msg := sprintf("Container memory limit %v exceeds maximum %v", [memory_limit, max_memory])
+        }
+
+        cpu_exceeds_limit(limit, max) {
+            # Convert CPU values to comparable format
+            limit_value := cpu_to_millicores(limit)
+            max_value := cpu_to_millicores(max)
+            limit_value > max_value
+        }
+
+        memory_exceeds_limit(limit, max) {
+            # Convert memory values to bytes
+            limit_bytes := memory_to_bytes(limit)
+            max_bytes := memory_to_bytes(max)
+            limit_bytes > max_bytes
+        }
+
+        cpu_to_millicores(cpu) = millicores {
+            # Simplified CPU conversion - extend as needed
+            endswith(cpu, "m")
+            millicores := to_number(trim_suffix(cpu, "m"))
+        }
+
+        memory_to_bytes(memory) = bytes {
+            # Simplified memory conversion - extend as needed
+            endswith(memory, "Gi")
+            gigabytes := to_number(trim_suffix(memory, "Gi"))
+            bytes := gigabytes * 1024 * 1024 * 1024
+        }
+
+---
+# DePIN Resource Quota Constraint
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: DePinResourceQuota
+metadata:
+  name: depin-ai-compute-resources
+  labels:
+    depin.ai/policy-type: resource-management
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["depin-ai-compute"]
+  parameters:
+    maxCpu: "4000m"
+    maxMemory: "8Gi"
+    maxGpu: 2
+    requiredResources: ["cpu", "memory"]

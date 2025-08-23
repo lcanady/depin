@@ -1,0 +1,199 @@
+# RBAC Roles for DePIN Operators and Controllers
+# These roles define elevated permissions for operators that manage DePIN infrastructure
+
+# ClusterRole for DePIN operators - comprehensive management permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-operator-role
+  labels:
+    depin.ai/component: operator
+    depin.ai/scope: cluster
+    depin.ai/privilege-level: elevated
+rules:
+# Full resource management for operators
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "persistentvolumeclaims", "events", "configmaps", "secrets", "serviceaccounts"]
+  verbs: ["*"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+  verbs: ["*"]
+# Custom Resource Definitions for operator patterns
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["*"]
+# RBAC management for creating service accounts and roles
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Network policy management
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies", "ingresses"]
+  verbs: ["*"]
+# Storage management
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses", "volumeattachments"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Autoscaling management
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["*"]
+# Policy management
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets", "podsecuritypolicies"]
+  verbs: ["*"]
+# Node management for infrastructure operators
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+
+---
+# ClusterRoleBinding for DePIN operators
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-operator-binding
+  labels:
+    depin.ai/component: operator
+subjects:
+- kind: ServiceAccount
+  name: depin-operator
+  namespace: depin-system
+roleRef:
+  kind: ClusterRole
+  name: depin-operator-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for cert-manager - TLS certificate management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-cert-manager-role
+  labels:
+    depin.ai/component: cert-manager
+    depin.ai/scope: cluster
+rules:
+# Certificate and Issuer management
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates", "certificaterequests", "issuers", "clusterissuers"]
+  verbs: ["*"]
+# Secret management for TLS certificates
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# ConfigMap access for configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Event creation for certificate lifecycle
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+# Ingress management for automatic TLS
+- apiGroups: ["networking.k8s.io", "extensions"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+# Service management for ACME challenges
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# ClusterRoleBinding for cert-manager
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-cert-manager-binding
+  labels:
+    depin.ai/component: cert-manager
+subjects:
+- kind: ServiceAccount
+  name: depin-cert-manager
+  namespace: depin-system
+roleRef:
+  kind: ClusterRole
+  name: depin-cert-manager-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for backup operators (Velero)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-backup-role
+  labels:
+    depin.ai/component: backup
+    depin.ai/scope: cluster
+rules:
+# Resource backup and restore
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Persistent volume snapshot management
+- apiGroups: ["snapshot.storage.k8s.io"]
+  resources: ["volumesnapshots", "volumesnapshotclasses", "volumesnapshotcontents"]
+  verbs: ["*"]
+# Custom resources for backup configuration
+- apiGroups: ["velero.io"]
+  resources: ["*"]
+  verbs: ["*"]
+
+---
+# ClusterRoleBinding for backup operators
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-backup-binding
+  labels:
+    depin.ai/component: backup
+subjects:
+- kind: ServiceAccount
+  name: depin-backup
+  namespace: depin-system
+roleRef:
+  kind: ClusterRole
+  name: depin-backup-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for namespace-specific operator tasks
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-system
+  name: depin-operator-namespace-role
+  labels:
+    depin.ai/component: operator
+    depin.ai/scope: namespace
+rules:
+# Leader election for operator high availability
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["depin-operator-lock"]
+  verbs: ["get", "update"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create"]
+# Coordination for operator clusters
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["*"]
+
+---
+# RoleBinding for namespace-specific operator tasks
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-operator-namespace-binding
+  namespace: depin-system
+  labels:
+    depin.ai/component: operator
+subjects:
+- kind: ServiceAccount
+  name: depin-operator
+  namespace: depin-system
+roleRef:
+  kind: Role
+  name: depin-operator-namespace-role
+  apiGroup: rbac.authorization.k8s.io

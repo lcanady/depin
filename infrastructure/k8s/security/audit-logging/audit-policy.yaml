@@ -1,0 +1,143 @@
+# Advanced Audit Policy for DePIN AI Compute Infrastructure
+# This policy provides comprehensive security event logging and monitoring
+
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+# Security-sensitive operations - full logging
+- level: Request
+  namespaces: ["depin-secure", "depin-system"]
+  resources:
+  - group: ""
+    resources: ["secrets", "configmaps", "serviceaccounts"]
+  - group: "rbac.authorization.k8s.io"
+    resources: ["roles", "clusterroles", "rolebindings", "clusterrolebindings"]
+  - group: "policy"
+    resources: ["podsecuritypolicies"]
+  - group: "networking.k8s.io"
+    resources: ["networkpolicies"]
+
+# Authentication and authorization events
+- level: Metadata
+  namespaces: ["depin-edge", "depin-ai-compute"]
+  resources:
+  - group: ""
+    resources: ["pods/exec", "pods/portforward", "pods/proxy"]
+  - group: ""
+    resources: ["services/proxy"]
+
+# RBAC changes - always audit at request level
+- level: Request
+  resources:
+  - group: "rbac.authorization.k8s.io"
+    resources: ["*"]
+
+# Critical resource modifications
+- level: Request
+  verbs: ["create", "update", "patch", "delete"]
+  resources:
+  - group: ""
+    resources: ["pods", "services", "persistentvolumes", "persistentvolumeclaims"]
+  - group: "apps"
+    resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+  - group: "extensions"
+    resources: ["ingresses"]
+
+# Network policy changes
+- level: Request
+  resources:
+  - group: "networking.k8s.io"
+    resources: ["networkpolicies", "ingresses"]
+
+# Security context modifications
+- level: Request
+  verbs: ["create", "update", "patch"]
+  resources:
+  - group: ""
+    resources: ["pods"]
+  namespaces: ["depin-ai-compute", "depin-secure"]
+  omitStages:
+  - RequestReceived
+
+# Custom resource operations (DePIN-specific)
+- level: Metadata
+  resources:
+  - group: "depin.ai"
+    resources: ["*"]
+
+# Admission controller decisions
+- level: Request
+  users: ["system:serviceaccount:kube-system:*"]
+  verbs: ["create", "update", "patch"]
+  resources:
+  - group: ""
+    resources: ["pods"]
+
+# Certificate and TLS operations
+- level: Request
+  resources:
+  - group: "certificates.k8s.io"
+    resources: ["certificatesigningrequests"]
+  - group: "cert-manager.io"
+    resources: ["certificates", "issuers", "clusterissuers"]
+
+# Storage and backup operations
+- level: Metadata
+  verbs: ["create", "update", "patch", "delete"]
+  resources:
+  - group: ""
+    resources: ["persistentvolumes", "persistentvolumeclaims"]
+  - group: "storage.k8s.io"
+    resources: ["storageclasses", "volumeattachments"]
+  - group: "snapshot.storage.k8s.io"
+    resources: ["volumesnapshots", "volumesnapshotcontents"]
+
+# Ignore routine operations to reduce log volume
+- level: None
+  users: ["system:kube-proxy"]
+  verbs: ["watch"]
+  resources:
+  - group: ""
+    resources: ["endpoints", "services", "nodes"]
+
+- level: None
+  users: ["system:unsecured"]
+  namespaces: ["kube-system"]
+  verbs: ["get"]
+  resources:
+  - group: ""
+    resources: ["configmaps"]
+
+# Ignore frequent kubelet operations
+- level: None
+  users: ["kubelet"]
+  verbs: ["get"]
+  resources:
+  - group: ""
+    resources: ["nodes", "nodes/status"]
+
+# Log everything else at metadata level for comprehensive auditing
+- level: Metadata
+  omitStages:
+  - RequestReceived
+
+# Special rules for DePIN AI compute operations
+- level: Request
+  namespaces: ["depin-ai-compute"]
+  verbs: ["create", "update", "patch", "delete"]
+  resources:
+  - group: ""
+    resources: ["pods"]
+  users:
+  - "system:serviceaccount:depin-ai-compute:depin-ai-compute"
+  - "system:serviceaccount:depin-ai-compute:depin-ai-coordinator"
+
+# Monitor privileged operations in system namespace
+- level: RequestResponse
+  namespaces: ["depin-system"]
+  verbs: ["create", "update", "patch", "delete"]
+  resources:
+  - group: ""
+    resources: ["pods"]
+  users:
+  - "system:serviceaccount:depin-system:depin-operator"

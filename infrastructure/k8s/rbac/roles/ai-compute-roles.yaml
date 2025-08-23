@@ -1,0 +1,123 @@
+# RBAC Roles for DePIN AI Compute Workloads
+# These roles define permissions for AI compute services and workloads
+
+# Role for AI compute workloads - restricted to necessary permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-ai-compute
+  name: depin-ai-compute-role
+  labels:
+    depin.ai/component: ai-compute
+    depin.ai/permission-level: standard
+rules:
+# Pod management for scaling and health checks
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/status"]
+  verbs: ["get"]
+# ConfigMap and Secret access for configuration
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+# Service discovery
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+# Event creation for monitoring
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+# Persistent volume claims for data storage
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding for AI compute service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-ai-compute-binding
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/component: ai-compute
+subjects:
+- kind: ServiceAccount
+  name: depin-ai-compute
+  namespace: depin-ai-compute
+roleRef:
+  kind: Role
+  name: depin-ai-compute-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for AI compute coordinators - higher permissions for orchestration
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-ai-compute
+  name: depin-ai-coordinator-role
+  labels:
+    depin.ai/component: ai-coordinator
+    depin.ai/permission-level: elevated
+rules:
+# Full pod management for orchestration
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/status", "pods/log"]
+  verbs: ["get", "list", "watch"]
+# Service management
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+# ConfigMap and Secret management
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+# Event and logging
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+# Deployment and ReplicaSet management
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# HorizontalPodAutoscaler for scaling
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# Service account for AI coordinators
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: depin-ai-coordinator
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/component: ai-coordinator
+    depin.ai/permission-level: elevated
+automountServiceAccountToken: true
+
+---
+# RoleBinding for AI coordinator
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-ai-coordinator-binding
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/component: ai-coordinator
+subjects:
+- kind: ServiceAccount
+  name: depin-ai-coordinator
+  namespace: depin-ai-compute
+roleRef:
+  kind: Role
+  name: depin-ai-coordinator-role
+  apiGroup: rbac.authorization.k8s.io

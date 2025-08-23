@@ -1,0 +1,221 @@
+# Security Event Rules and Alerting for DePIN AI Compute Infrastructure
+# These rules define automated alerting for security events in audit logs
+
+# PrometheusRule for security event alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: depin-security-alerts
+  namespace: depin-system
+  labels:
+    depin.ai/component: security-monitoring
+    prometheus: kube-prometheus
+spec:
+  groups:
+  - name: depin.security.rules
+    interval: 30s
+    rules:
+    # High privilege escalation attempts
+    - alert: PrivilegeEscalationAttempt
+      expr: |
+        increase(audit_total{verb="create",objectRef_resource="pods",objectRef_namespace=~"depin-.*"}[5m]) > 0
+        and on() audit_total{user_username!~"system:serviceaccount:depin-.*:.*"}
+      for: 0m
+      labels:
+        severity: critical
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Privilege escalation attempt detected"
+        description: "User {{ $labels.user_username }} attempted to create pods outside of service account context in namespace {{ $labels.objectRef_namespace }}"
+
+    # Unauthorized secret access
+    - alert: UnauthorizedSecretAccess
+      expr: |
+        increase(audit_total{verb=~"get|list",objectRef_resource="secrets",objectRef_namespace=~"depin-.*"}[5m]) > 0
+        and on() audit_total{user_username!~"system:serviceaccount:.*"}
+      for: 0m
+      labels:
+        severity: high
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Unauthorized secret access detected"
+        description: "User {{ $labels.user_username }} accessed secrets in namespace {{ $labels.objectRef_namespace }} without service account context"
+
+    # Network policy violations
+    - alert: NetworkPolicyViolation
+      expr: |
+        increase(audit_total{verb=~"create|update|delete",objectRef_resource="networkpolicies"}[5m]) > 0
+        and on() audit_total{user_username!~"system:serviceaccount:depin-system:depin-operator"}
+      for: 0m
+      labels:
+        severity: high
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Network policy violation detected"
+        description: "User {{ $labels.user_username }} modified network policies without proper authorization"
+
+    # RBAC modifications
+    - alert: RBACModification
+      expr: |
+        increase(audit_total{verb=~"create|update|delete",objectRef_resource=~"roles|clusterroles|rolebindings|clusterrolebindings"}[5m]) > 0
+      for: 0m
+      labels:
+        severity: critical
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "RBAC modification detected"
+        description: "User {{ $labels.user_username }} modified RBAC resources: {{ $labels.objectRef_resource }}"
+
+    # Excessive failed authentication attempts
+    - alert: ExcessiveAuthFailures
+      expr: |
+        rate(audit_total{verb="create",objectRef_resource="tokenreviews",responseStatus_code!~"2.."}[5m]) > 0.1
+      for: 2m
+      labels:
+        severity: warning
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Excessive authentication failures"
+        description: "High rate of authentication failures detected from source {{ $labels.sourceIPs }}"
+
+    # Pod security policy violations
+    - alert: PodSecurityViolation
+      expr: |
+        increase(audit_total{verb="create",objectRef_resource="pods",responseStatus_code!~"2.."}[5m]) > 0
+        and on() audit_total{responseStatus_reason=~".*security.*|.*policy.*"}
+      for: 0m
+      labels:
+        severity: high
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Pod security policy violation"
+        description: "Pod creation failed due to security policy violation in namespace {{ $labels.objectRef_namespace }}"
+
+    # Suspicious exec/portforward activity
+    - alert: SuspiciousContainerAccess
+      expr: |
+        increase(audit_total{verb="create",objectRef_subresource=~"exec|portforward"}[5m]) > 0
+        and on() audit_total{user_username!~"system:serviceaccount:.*"}
+      for: 0m
+      labels:
+        severity: high
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Suspicious container access detected"
+        description: "User {{ $labels.user_username }} performed {{ $labels.objectRef_subresource }} on pod {{ $labels.objectRef_name }} in namespace {{ $labels.objectRef_namespace }}"
+
+    # Certificate manipulation
+    - alert: CertificateManipulation
+      expr: |
+        increase(audit_total{verb=~"create|update|delete",objectRef_resource=~"certificates|certificatesigningrequests"}[5m]) > 0
+        and on() audit_total{user_username!~"system:serviceaccount:depin-system:depin-cert-manager"}
+      for: 0m
+      labels:
+        severity: critical
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Unauthorized certificate manipulation"
+        description: "User {{ $labels.user_username }} manipulated certificates without proper authorization"
+
+    # Storage access anomalies
+    - alert: UnauthorizedStorageAccess
+      expr: |
+        increase(audit_total{verb=~"create|update|delete",objectRef_resource=~"persistentvolumes|persistentvolumeclaims"}[5m]) > 0
+        and on() audit_total{objectRef_namespace="depin-secure"}
+        and on() audit_total{user_username!~"system:serviceaccount:depin-system:.*"}
+      for: 0m
+      labels:
+        severity: high
+        category: security
+        depin_component: audit
+      annotations:
+        summary: "Unauthorized storage access in secure namespace"
+        description: "User {{ $labels.user_username }} accessed storage resources in secure namespace without proper authorization"
+
+---
+# ConfigMap for security event correlation rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: depin-security-rules
+  namespace: depin-system
+  labels:
+    depin.ai/component: security-monitoring
+data:
+  correlation-rules.yaml: |
+    # Security event correlation rules for SIEM integration
+    rules:
+      - name: "coordinated_attack_pattern"
+        description: "Detect coordinated attacks across multiple services"
+        conditions:
+          - failed_auth_attempts > 10 within 5m
+          - rbac_modifications > 0 within 5m
+          - network_policy_changes > 0 within 5m
+        severity: "critical"
+        actions:
+          - "block_source_ip"
+          - "notify_security_team"
+          - "increase_monitoring"
+
+      - name: "privilege_escalation_chain"
+        description: "Detect privilege escalation chains"
+        conditions:
+          - service_account_creation within 1m
+          - role_binding_creation within 2m
+          - pod_creation_with_privileges within 3m
+        severity: "critical"
+        actions:
+          - "quarantine_namespace"
+          - "notify_security_team"
+          - "audit_full_cluster"
+
+      - name: "data_exfiltration_pattern"
+        description: "Detect potential data exfiltration"
+        conditions:
+          - secret_access > 5 within 1m
+          - pod_exec_commands > 3 within 1m
+          - network_egress_anomaly detected
+        severity: "high"
+        actions:
+          - "block_egress_traffic"
+          - "capture_network_traffic"
+          - "notify_security_team"
+
+  incident-response.yaml: |
+    # Automated incident response procedures
+    procedures:
+      privilege_escalation:
+        immediate:
+          - "isolate_affected_namespace"
+          - "revoke_suspicious_tokens"
+          - "capture_audit_snapshot"
+        investigation:
+          - "analyze_user_activity"
+          - "check_rbac_changes"
+          - "review_pod_specifications"
+        recovery:
+          - "restore_clean_rbac_state"
+          - "update_security_policies"
+          - "strengthen_monitoring"
+
+      unauthorized_access:
+        immediate:
+          - "block_source_ip"
+          - "invalidate_user_sessions"
+          - "increase_logging_verbosity"
+        investigation:
+          - "trace_access_patterns"
+          - "check_authentication_logs"
+          - "analyze_api_call_sequences"
+        recovery:
+          - "rotate_affected_credentials"
+          - "update_access_policies"
+          - "implement_additional_controls"

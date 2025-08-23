@@ -1,0 +1,185 @@
+# Network Policies for DePIN System Components
+# These policies define allowed traffic patterns for monitoring, logging, and management
+
+# Allow monitoring stack to scrape metrics from all namespaces
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-scrape-access
+  namespace: depin-system
+  labels:
+    depin.ai/policy-type: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/component: prometheus
+  policyTypes:
+  - Egress
+  egress:
+  # Access to scrape metrics from all namespaces
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 8080  # Application metrics
+    - protocol: TCP
+      port: 9090  # Prometheus metrics
+    - protocol: TCP
+      port: 10250 # Kubelet metrics
+    - protocol: TCP
+      port: 2379  # etcd metrics
+    - protocol: TCP
+      port: 2380  # etcd peer metrics
+
+---
+# Allow pods to expose metrics to monitoring
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metrics-exposure
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/policy-type: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/metrics: "enabled"
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow prometheus to scrape metrics
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-system
+      podSelector:
+        matchLabels:
+          depin.ai/component: prometheus
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9090
+
+---
+# Allow logging agents to collect logs from all pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logging-collection
+  namespace: depin-system
+  labels:
+    depin.ai/policy-type: logging
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/component: fluentd
+  policyTypes:
+  - Egress
+  egress:
+  # Access to collect logs from all namespaces
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 24224  # Fluentd forward protocol
+    - protocol: UDP
+      port: 24224  # Fluentd forward protocol
+  # Access to Elasticsearch/OpenSearch
+  - to:
+    - podSelector:
+        matchLabels:
+          depin.ai/component: elasticsearch
+    ports:
+    - protocol: TCP
+      port: 9200
+    - protocol: TCP
+      port: 9300
+
+---
+# Allow system components internal communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: system-internal-communication
+  namespace: depin-system
+  labels:
+    depin.ai/policy-type: system-internal
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/tier: system
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-system
+      podSelector:
+        matchLabels:
+          depin.ai/tier: system
+    ports:
+    - protocol: TCP
+      port: 3000  # Grafana
+    - protocol: TCP
+      port: 9090  # Prometheus
+    - protocol: TCP
+      port: 9200  # Elasticsearch
+    - protocol: TCP
+      port: 5601  # Kibana
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-system
+      podSelector:
+        matchLabels:
+          depin.ai/tier: system
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 9090
+    - protocol: TCP
+      port: 9200
+    - protocol: TCP
+      port: 5601
+
+---
+# Allow external access to monitoring dashboard (Grafana)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-external-access
+  namespace: depin-system
+  labels:
+    depin.ai/policy-type: external-access
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/component: grafana
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow access from ingress controllers
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3000
+  # Allow access from depin-edge for admin interfaces
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-edge
+      podSelector:
+        matchLabels:
+          depin.ai/component: admin-gateway
+    ports:
+    - protocol: TCP
+      port: 3000

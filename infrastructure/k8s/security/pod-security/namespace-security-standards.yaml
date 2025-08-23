@@ -1,0 +1,60 @@
+# Pod Security Standards for DePIN AI Compute Infrastructure
+# This configuration implements namespace-level security policies using Pod Security Standards
+
+# Default namespace with restrictive baseline security
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: depin-default
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    depin.ai/security-zone: standard
+---
+# AI compute workload namespace with balanced security
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: depin-ai-compute
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: restricted
+    depin.ai/security-zone: compute
+    depin.ai/workload-type: ai-compute
+---
+# High-privilege namespace for system components (operators, monitoring)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: depin-system
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+    depin.ai/security-zone: system
+---
+# Restricted namespace for sensitive operations (cryptographic workloads)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: depin-secure
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    depin.ai/security-zone: restricted
+    depin.ai/workload-type: cryptographic
+---
+# Network isolation namespace for external-facing components
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: depin-edge
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    depin.ai/security-zone: edge
+    depin.ai/network-exposure: external

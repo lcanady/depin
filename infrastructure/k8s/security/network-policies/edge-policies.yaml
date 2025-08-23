@@ -1,0 +1,233 @@
+# Network Policies for DePIN Edge Components
+# These policies define allowed traffic patterns for external-facing services
+
+# Allow edge API gateway to communicate with AI compute services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-api-gateway
+  namespace: depin-edge
+  labels:
+    depin.ai/policy-type: api-gateway
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/component: api-gateway
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow external ingress traffic
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Allow internal health checks
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8081  # Health check endpoint
+  egress:
+  # Access to AI compute services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-ai-compute
+      podSelector:
+        matchLabels:
+          depin.ai/workload-type: ai-compute
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Access to authentication services
+  - to:
+    - podSelector:
+        matchLabels:
+          depin.ai/component: auth-service
+    ports:
+    - protocol: TCP
+      port: 8080
+  # DNS and system access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# Allow load balancer to access edge services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-load-balancer
+  namespace: depin-edge
+  labels:
+    depin.ai/policy-type: load-balancer
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/component: load-balancer
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow external traffic from anywhere (public load balancer)
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 80   # HTTP
+    - protocol: TCP
+      port: 443  # HTTPS
+  egress:
+  # Forward traffic to API gateway
+  - to:
+    - podSelector:
+        matchLabels:
+          depin.ai/component: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Health check access
+  - to:
+    - podSelector:
+        matchLabels:
+          depin.ai/tier: edge
+    ports:
+    - protocol: TCP
+      port: 8081
+
+---
+# Allow authentication service to validate requests
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-auth-service
+  namespace: depin-edge
+  labels:
+    depin.ai/policy-type: auth-service
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/component: auth-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow access from API gateway
+  - from:
+    - podSelector:
+        matchLabels:
+          depin.ai/component: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Allow access from AI compute services for token validation
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-ai-compute
+      podSelector:
+        matchLabels:
+          depin.ai/workload-type: ai-compute
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Access to external identity providers (OAuth, OIDC)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443   # HTTPS for external auth providers
+    - protocol: TCP
+      port: 80    # HTTP for external auth providers
+  # Access to database for user/token storage
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-secure
+      podSelector:
+        matchLabels:
+          depin.ai/component: auth-database
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+  # DNS access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# Allow rate limiting service to protect endpoints
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-rate-limiter
+  namespace: depin-edge
+  labels:
+    depin.ai/policy-type: rate-limiter
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/component: rate-limiter
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow access from API gateway for rate limit checks
+  - from:
+    - podSelector:
+        matchLabels:
+          depin.ai/component: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Access to Redis for rate limit state
+  - to:
+    - podSelector:
+        matchLabels:
+          depin.ai/component: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  # DNS access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53

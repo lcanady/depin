@@ -1,0 +1,342 @@
+# DePIN Security Penetration Testing Suite
+# This configuration deploys security testing tools and attack simulations
+
+# Namespace for security testing
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: depin-security-testing
+  labels:
+    depin.ai/component: security-testing
+    depin.ai/environment: testing
+
+---
+# Service account for security testing with limited permissions
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: depin-security-tester
+  namespace: depin-security-testing
+  labels:
+    depin.ai/component: security-testing
+automountServiceAccountToken: true
+
+---
+# Role for security testing - read-only access for reconnaissance
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-security-tester-role
+  labels:
+    depin.ai/component: security-testing
+rules:
+# Read-only access for enumeration testing
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies", "ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding for security testing
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-security-tester-binding
+  labels:
+    depin.ai/component: security-testing
+subjects:
+- kind: ServiceAccount
+  name: depin-security-tester
+  namespace: depin-security-testing
+roleRef:
+  kind: ClusterRole
+  name: depin-security-tester-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Job for automated security scanning
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: depin-security-scan
+  namespace: depin-security-testing
+  labels:
+    depin.ai/component: security-scanner
+spec:
+  template:
+    metadata:
+      labels:
+        depin.ai/component: security-scanner
+    spec:
+      serviceAccountName: depin-security-tester
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: kube-hunter
+        image: aquasec/kube-hunter:latest
+        args: ["--remote", "kubernetes.default.svc.cluster.local", "--report", "json"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: results
+          mountPath: /tmp/results
+      - name: kube-bench
+        image: aquasec/kube-bench:latest
+        args: ["--benchmark", "cis-1.23", "--json", "--outputfile", "/tmp/results/kube-bench.json"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: results
+          mountPath: /tmp/results
+      volumes:
+      - name: results
+        emptyDir: {}
+
+---
+# CronJob for regular security assessments
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: depin-security-assessment
+  namespace: depin-security-testing
+  labels:
+    depin.ai/component: security-assessment
+spec:
+  schedule: "0 2 * * 0"  # Weekly on Sunday at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            depin.ai/component: security-assessment
+        spec:
+          serviceAccountName: depin-security-tester
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+          - name: security-assessment
+            image: python:3.9-slim
+            command: ["/bin/bash"]
+            args:
+            - -c
+            - |
+              set -e
+              
+              # Install required tools
+              apt-get update && apt-get install -y curl jq
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl && mv kubectl /usr/local/bin/
+              
+              # Create assessment report
+              mkdir -p /tmp/assessment
+              
+              echo "=== DePIN Security Assessment ===" > /tmp/assessment/report.txt
+              echo "Timestamp: $(date)" >> /tmp/assessment/report.txt
+              echo "" >> /tmp/assessment/report.txt
+              
+              # Check namespace security configurations
+              echo "=== Namespace Security Review ===" >> /tmp/assessment/report.txt
+              kubectl get namespaces -l depin.ai/security-zone -o json | jq -r '.items[] | "\(.metadata.name): \(.metadata.labels)"' >> /tmp/assessment/report.txt
+              echo "" >> /tmp/assessment/report.txt
+              
+              # Check RBAC configurations
+              echo "=== RBAC Configuration Review ===" >> /tmp/assessment/report.txt
+              kubectl get clusterrolebindings -o json | jq -r '.items[] | select(.subjects[]?.name | contains("depin")) | "\(.metadata.name): \(.subjects[].name)"' >> /tmp/assessment/report.txt
+              echo "" >> /tmp/assessment/report.txt
+              
+              # Check network policies
+              echo "=== Network Policy Review ===" >> /tmp/assessment/report.txt
+              kubectl get networkpolicies --all-namespaces -o json | jq -r '.items[] | "\(.metadata.namespace)/\(.metadata.name): \(.spec.podSelector)"' >> /tmp/assessment/report.txt
+              echo "" >> /tmp/assessment/report.txt
+              
+              # Check pod security contexts
+              echo "=== Pod Security Context Review ===" >> /tmp/assessment/report.txt
+              kubectl get pods --all-namespaces -l depin.ai/workload-type -o json | jq -r '.items[] | select(.spec.securityContext.runAsRoot // true) | "\(.metadata.namespace)/\(.metadata.name): Running as root"' >> /tmp/assessment/report.txt
+              
+              echo "Assessment complete. Report saved to /tmp/assessment/report.txt"
+              cat /tmp/assessment/report.txt
+              
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              capabilities:
+                drop:
+                - ALL
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            volumeMounts:
+            - name: assessment-results
+              mountPath: /tmp/assessment
+          volumes:
+          - name: assessment-results
+            emptyDir: {}
+
+---
+# ConfigMap with attack simulation scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: depin-attack-simulations
+  namespace: depin-security-testing
+  labels:
+    depin.ai/component: attack-simulations
+data:
+  privilege-escalation-test.sh: |
+    #!/bin/bash
+    # Test for privilege escalation vulnerabilities
+    
+    echo "=== Testing Privilege Escalation ==="
+    
+    # Test 1: Try to create privileged pod
+    kubectl apply --dry-run=server -f - << EOF
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: privileged-test
+      namespace: depin-ai-compute
+    spec:
+      containers:
+      - name: test
+        image: busybox
+        securityContext:
+          privileged: true
+    EOF
+    
+    # Test 2: Try to access host filesystem
+    kubectl apply --dry-run=server -f - << EOF
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: hostpath-test
+      namespace: depin-ai-compute
+    spec:
+      containers:
+      - name: test
+        image: busybox
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+      volumes:
+      - name: host-root
+        hostPath:
+          path: /
+    EOF
+
+  network-policy-test.sh: |
+    #!/bin/bash
+    # Test network policy enforcement
+    
+    echo "=== Testing Network Policy Enforcement ==="
+    
+    # Deploy test pods in different namespaces
+    kubectl apply -f - << EOF
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: network-test-source
+      namespace: depin-ai-compute
+      labels:
+        app: network-test
+    spec:
+      containers:
+      - name: test
+        image: busybox
+        command: ["sleep", "3600"]
+    ---
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: network-test-target
+      namespace: depin-secure
+      labels:
+        app: network-test
+    spec:
+      containers:
+      - name: test
+        image: busybox
+        command: ["sleep", "3600"]
+    EOF
+    
+    # Wait for pods to be ready
+    sleep 30
+    
+    # Test cross-namespace communication
+    TARGET_IP=$(kubectl get pod network-test-target -n depin-secure -o jsonpath='{.status.podIP}')
+    
+    if kubectl exec -n depin-ai-compute network-test-source -- wget -qO- --timeout=5 http://$TARGET_IP:80 2>/dev/null; then
+      echo "WARNING: Cross-namespace communication allowed"
+    else
+      echo "SUCCESS: Cross-namespace communication blocked"
+    fi
+    
+    # Cleanup
+    kubectl delete pod network-test-source -n depin-ai-compute --ignore-not-found
+    kubectl delete pod network-test-target -n depin-secure --ignore-not-found
+
+  rbac-enumeration-test.sh: |
+    #!/bin/bash
+    # Test RBAC enumeration and access controls
+    
+    echo "=== Testing RBAC Enumeration ==="
+    
+    # Test service account token access
+    if [ -f "/var/run/secrets/kubernetes.io/serviceaccount/token" ]; then
+      TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+      
+      # Test cluster-admin access
+      if kubectl auth can-i "*" "*" --as=system:serviceaccount:$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace):$(cat /var/run/secrets/kubernetes.io/serviceaccount/serviceaccount) 2>/dev/null; then
+        echo "CRITICAL: Service account has cluster-admin privileges"
+      else
+        echo "SUCCESS: Service account does not have cluster-admin privileges"
+      fi
+      
+      # Test secret access across namespaces
+      for ns in depin-ai-compute depin-secure depin-system; do
+        if kubectl get secrets -n $ns 2>/dev/null | grep -q "default-token\|depin"; then
+          echo "WARNING: Can access secrets in namespace $ns"
+        else
+          echo "SUCCESS: Cannot access secrets in namespace $ns"
+        fi
+      done
+    fi

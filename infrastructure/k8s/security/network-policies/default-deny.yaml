@@ -1,0 +1,72 @@
+# Default Deny Network Policies for DePIN AI Compute Infrastructure
+# These policies implement a default-deny approach with selective allow rules
+
+# Default deny all ingress traffic in depin-ai-compute namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+
+---
+# Default deny all egress traffic in depin-ai-compute namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+
+---
+# Default deny all traffic in depin-secure namespace (most restrictive)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: depin-secure
+  labels:
+    depin.ai/policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# Default deny ingress for depin-edge namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: depin-edge
+  labels:
+    depin.ai/policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+
+---
+# Default deny egress for depin-edge namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: depin-edge
+  labels:
+    depin.ai/policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress

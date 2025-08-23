@@ -1,0 +1,245 @@
+# RBAC Roles for DePIN Edge Components
+# These roles define permissions for API gateway, authentication, and ingress
+
+# Role for API Gateway - service discovery and configuration access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-edge
+  name: depin-api-gateway-role
+  labels:
+    depin.ai/component: api-gateway
+    depin.ai/tier: edge
+rules:
+# Service discovery for routing
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+# ConfigMap and Secret access for configuration
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+# Pod information for health checks
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+# Event creation for auditing
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+
+---
+# RoleBinding for API Gateway
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-api-gateway-binding
+  namespace: depin-edge
+  labels:
+    depin.ai/component: api-gateway
+subjects:
+- kind: ServiceAccount
+  name: depin-api-gateway
+  namespace: depin-edge
+roleRef:
+  kind: Role
+  name: depin-api-gateway-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for API Gateway - cross-namespace service discovery
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-api-gateway-cluster-role
+  labels:
+    depin.ai/component: api-gateway
+    depin.ai/scope: cluster
+rules:
+# Cross-namespace service discovery
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+  resourceNames: []
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch"]
+# Ingress information for routing decisions
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding for API Gateway
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-api-gateway-cluster-binding
+  labels:
+    depin.ai/component: api-gateway
+subjects:
+- kind: ServiceAccount
+  name: depin-api-gateway
+  namespace: depin-edge
+roleRef:
+  kind: ClusterRole
+  name: depin-api-gateway-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for Authentication Service - user and token management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-edge
+  name: depin-auth-role
+  labels:
+    depin.ai/component: auth-service
+    depin.ai/security-level: high
+rules:
+# Secret management for JWT keys and certificates
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# ConfigMap access for auth configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Event creation for security auditing
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+# Service access for external auth providers
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding for Authentication Service
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-auth-binding
+  namespace: depin-edge
+  labels:
+    depin.ai/component: auth-service
+subjects:
+- kind: ServiceAccount
+  name: depin-auth
+  namespace: depin-edge
+roleRef:
+  kind: Role
+  name: depin-auth-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for Ingress Controller - traffic management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-ingress-role
+  labels:
+    depin.ai/component: ingress
+    depin.ai/scope: cluster
+rules:
+# Ingress resource management
+- apiGroups: ["networking.k8s.io", "extensions"]
+  resources: ["ingresses", "ingressclasses"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses/status"]
+  verbs: ["update"]
+# Service and endpoint discovery for backends
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+# Secret access for TLS certificates
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+# ConfigMap access for ingress configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Event creation for ingress events
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+# Node information for external IP assignment
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding for Ingress Controller
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-ingress-binding
+  labels:
+    depin.ai/component: ingress
+subjects:
+- kind: ServiceAccount
+  name: depin-ingress
+  namespace: depin-edge
+roleRef:
+  kind: ClusterRole
+  name: depin-ingress-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for rate limiting service
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-edge
+  name: depin-rate-limiter-role
+  labels:
+    depin.ai/component: rate-limiter
+rules:
+# ConfigMap access for rate limit configuration
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+# Secret access for Redis credentials
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+# Service discovery for Redis backend
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+# Event creation for rate limit violations
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+
+---
+# Service account for rate limiter
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: depin-rate-limiter
+  namespace: depin-edge
+  labels:
+    depin.ai/component: rate-limiter
+    depin.ai/tier: edge
+automountServiceAccountToken: true
+
+---
+# RoleBinding for rate limiter
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-rate-limiter-binding
+  namespace: depin-edge
+  labels:
+    depin.ai/component: rate-limiter
+subjects:
+- kind: ServiceAccount
+  name: depin-rate-limiter
+  namespace: depin-edge
+roleRef:
+  kind: Role
+  name: depin-rate-limiter-role
+  apiGroup: rbac.authorization.k8s.io

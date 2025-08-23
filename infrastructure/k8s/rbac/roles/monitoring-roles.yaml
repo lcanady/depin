@@ -1,0 +1,197 @@
+# RBAC Roles for DePIN Monitoring and Observability Components
+# These roles define permissions for Prometheus, Grafana, and logging components
+
+# ClusterRole for Prometheus - needs cluster-wide read access for metrics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-prometheus-role
+  labels:
+    depin.ai/component: prometheus
+    depin.ai/scope: cluster
+rules:
+# Metrics scraping from all namespaces
+- apiGroups: [""]
+  resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]
+# Ingress and NetworkPolicy monitoring
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch"]
+# Resource monitoring
+- apiGroups: ["extensions", "apps"]
+  resources: ["deployments", "daemonsets", "replicasets"]
+  verbs: ["get", "list", "watch"]
+# HPA and resource scaling monitoring
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+# Storage monitoring
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses", "volumeattachments"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["persistentvolumes", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding for Prometheus
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-prometheus-binding
+  labels:
+    depin.ai/component: prometheus
+subjects:
+- kind: ServiceAccount
+  name: depin-monitoring
+  namespace: depin-system
+roleRef:
+  kind: ClusterRole
+  name: depin-prometheus-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for Grafana - dashboard management and data source access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-system
+  name: depin-grafana-role
+  labels:
+    depin.ai/component: grafana
+rules:
+# ConfigMap management for dashboards
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Service access for data sources
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+# Pod information for troubleshooting
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding for Grafana
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-grafana-binding
+  namespace: depin-system
+  labels:
+    depin.ai/component: grafana
+subjects:
+- kind: ServiceAccount
+  name: depin-monitoring
+  namespace: depin-system
+roleRef:
+  kind: Role
+  name: depin-grafana-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ClusterRole for logging (Fluentd/Fluent Bit) - needs access to all pod logs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: depin-logging-role
+  labels:
+    depin.ai/component: logging
+    depin.ai/scope: cluster
+rules:
+# Pod and container log access
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+# Node information for log collection
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+# Namespace information
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch"]
+# Event collection for comprehensive logging
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding for logging
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: depin-logging-binding
+  labels:
+    depin.ai/component: logging
+subjects:
+- kind: ServiceAccount
+  name: depin-logging
+  namespace: depin-system
+roleRef:
+  kind: ClusterRole
+  name: depin-logging-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for log processing and storage (Elasticsearch, OpenSearch)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: depin-system
+  name: depin-log-storage-role
+  labels:
+    depin.ai/component: log-storage
+rules:
+# Service and endpoint management for cluster formation
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+# ConfigMap and Secret access for configuration
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+# Pod status monitoring
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+# PVC access for log storage
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+
+---
+# Service account for log storage components
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: depin-log-storage
+  namespace: depin-system
+  labels:
+    depin.ai/component: log-storage
+    depin.ai/tier: system
+automountServiceAccountToken: true
+
+---
+# RoleBinding for log storage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: depin-log-storage-binding
+  namespace: depin-system
+  labels:
+    depin.ai/component: log-storage
+subjects:
+- kind: ServiceAccount
+  name: depin-log-storage
+  namespace: depin-system
+roleRef:
+  kind: Role
+  name: depin-log-storage-role
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,165 @@
+# Pod Security Policies for DePIN AI Compute Infrastructure
+# These policies define the security constraints for different workload types
+
+# Restricted policy for cryptographic and sensitive workloads
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: depin-restricted
+  labels:
+    depin.ai/security-level: restricted
+spec:
+  # Security context constraints
+  privileged: false
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  
+  # Required security context
+  requiredDropCapabilities:
+    - ALL
+  
+  # Forbidden capabilities
+  forbiddenSysctls:
+    - "*"
+  
+  # Run as non-root with specific UID range
+  runAsUser:
+    rule: MustRunAsNonRoot
+  runAsGroup:
+    rule: MustRunAs
+    ranges:
+      - min: 10000
+        max: 65535
+  
+  # Filesystem restrictions
+  fsGroup:
+    rule: MustRunAs
+    ranges:
+      - min: 10000
+        max: 65535
+  
+  # Volume restrictions
+  volumes:
+    - configMap
+    - emptyDir
+    - projected
+    - secret
+    - downwardAPI
+    - persistentVolumeClaim
+  
+  # Host restrictions
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  
+  # SELinux
+  seLinux:
+    rule: RunAsAny
+
+---
+# Baseline policy for general AI compute workloads
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: depin-baseline
+  labels:
+    depin.ai/security-level: baseline
+spec:
+  # Security context constraints
+  privileged: false
+  allowPrivilegeEscalation: false
+  
+  # Allowed capabilities for AI workloads
+  allowedCapabilities:
+    - NET_BIND_SERVICE
+  
+  # Drop dangerous capabilities
+  requiredDropCapabilities:
+    - SYS_ADMIN
+    - SYS_TIME
+    - NET_ADMIN
+  
+  # Run as non-root
+  runAsUser:
+    rule: MustRunAsNonRoot
+  runAsGroup:
+    rule: RunAsAny
+  
+  # Filesystem constraints
+  fsGroup:
+    rule: RunAsAny
+  
+  # Volume restrictions
+  volumes:
+    - configMap
+    - emptyDir
+    - projected
+    - secret
+    - downwardAPI
+    - persistentVolumeClaim
+    - hostPath  # Limited hostPath for AI compute needs
+  
+  # Host restrictions
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  
+  # SELinux
+  seLinux:
+    rule: RunAsAny
+  
+  # Host path restrictions for AI workloads
+  allowedHostPaths:
+    - pathPrefix: "/tmp"
+      readOnly: false
+    - pathPrefix: "/var/lib/depin"
+      readOnly: false
+
+---
+# Privileged policy for system components (operators, monitoring)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: depin-privileged
+  labels:
+    depin.ai/security-level: privileged
+spec:
+  # Security context constraints
+  privileged: true
+  allowPrivilegeEscalation: true
+  readOnlyRootFilesystem: false
+  
+  # Allowed capabilities for system components
+  allowedCapabilities:
+    - "*"
+  
+  # Run as any user (including root for system components)
+  runAsUser:
+    rule: RunAsAny
+  runAsGroup:
+    rule: RunAsAny
+  
+  # Filesystem constraints
+  fsGroup:
+    rule: RunAsAny
+  
+  # All volumes allowed for system components
+  volumes:
+    - "*"
+  
+  # Host access allowed for monitoring and management
+  hostNetwork: true
+  hostIPC: true
+  hostPID: true
+  hostPorts:
+    - min: 0
+      max: 65535
+  
+  # SELinux
+  seLinux:
+    rule: RunAsAny
+  
+  # Host path access for system components
+  allowedHostPaths:
+    - pathPrefix: "/"
+      readOnly: false

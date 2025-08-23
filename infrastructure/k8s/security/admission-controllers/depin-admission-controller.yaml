@@ -1,0 +1,238 @@
+# DePIN Admission Controller for Policy Enforcement
+# This admission controller enforces DePIN-specific security policies and validates workloads
+
+# ValidatingAdmissionWebhook for DePIN security policies
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionWebhook
+metadata:
+  name: depin-security-validator
+  labels:
+    depin.ai/component: admission-controller
+    depin.ai/type: validating
+webhooks:
+- name: pod-security.depin.ai
+  clientConfig:
+    service:
+      name: depin-admission-controller
+      namespace: depin-system
+      path: /validate/pod-security
+  rules:
+  - operations: ["CREATE", "UPDATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  failurePolicy: Fail
+  timeoutSeconds: 10
+  namespaceSelector:
+    matchLabels:
+      depin.ai/security-validation: "enabled"
+
+- name: rbac-changes.depin.ai
+  clientConfig:
+    service:
+      name: depin-admission-controller
+      namespace: depin-system
+      path: /validate/rbac
+  rules:
+  - operations: ["CREATE", "UPDATE", "DELETE"]
+    apiGroups: ["rbac.authorization.k8s.io"]
+    apiVersions: ["v1"]
+    resources: ["roles", "clusterroles", "rolebindings", "clusterrolebindings"]
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  failurePolicy: Fail
+  timeoutSeconds: 10
+
+- name: network-policy.depin.ai
+  clientConfig:
+    service:
+      name: depin-admission-controller
+      namespace: depin-system
+      path: /validate/network-policy
+  rules:
+  - operations: ["CREATE", "UPDATE", "DELETE"]
+    apiGroups: ["networking.k8s.io"]
+    apiVersions: ["v1"]
+    resources: ["networkpolicies"]
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  failurePolicy: Fail
+  timeoutSeconds: 10
+
+---
+# MutatingAdmissionWebhook for DePIN policy enforcement
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionWebhook
+metadata:
+  name: depin-security-mutator
+  labels:
+    depin.ai/component: admission-controller
+    depin.ai/type: mutating
+webhooks:
+- name: security-defaults.depin.ai
+  clientConfig:
+    service:
+      name: depin-admission-controller
+      namespace: depin-system
+      path: /mutate/security-defaults
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  failurePolicy: Fail
+  timeoutSeconds: 10
+  namespaceSelector:
+    matchLabels:
+      depin.ai/auto-security: "enabled"
+
+- name: resource-quotas.depin.ai
+  clientConfig:
+    service:
+      name: depin-admission-controller
+      namespace: depin-system
+      path: /mutate/resource-quotas
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  failurePolicy: Fail
+  timeoutSeconds: 10
+  namespaceSelector:
+    matchLabels:
+      depin.ai/enforce-quotas: "enabled"
+
+---
+# Deployment for the admission controller
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: depin-admission-controller
+  namespace: depin-system
+  labels:
+    depin.ai/component: admission-controller
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      depin.ai/component: admission-controller
+  template:
+    metadata:
+      labels:
+        depin.ai/component: admission-controller
+        depin.ai/tier: system
+    spec:
+      serviceAccountName: depin-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: admission-controller
+        image: depin/admission-controller:v1.0.0  # Custom image to be built
+        imagePullPolicy: Always
+        ports:
+        - name: webhook-api
+          containerPort: 8443
+          protocol: TCP
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        env:
+        - name: TLS_CERT_FILE
+          value: "/etc/webhook/certs/tls.crt"
+        - name: TLS_PRIVATE_KEY_FILE
+          value: "/etc/webhook/certs/tls.key"
+        - name: WEBHOOK_PORT
+          value: "8443"
+        - name: METRICS_PORT
+          value: "8080"
+        - name: LOG_LEVEL
+          value: "info"
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /etc/webhook/certs
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: depin-admission-controller-certs
+      - name: tmp
+        emptyDir: {}
+
+---
+# Service for the admission controller
+apiVersion: v1
+kind: Service
+metadata:
+  name: depin-admission-controller
+  namespace: depin-system
+  labels:
+    depin.ai/component: admission-controller
+spec:
+  type: ClusterIP
+  ports:
+  - name: webhook-api
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    depin.ai/component: admission-controller
+
+---
+# Certificate for the admission controller webhook
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: depin-admission-controller-cert
+  namespace: depin-system
+  labels:
+    depin.ai/component: admission-controller
+spec:
+  secretName: depin-admission-controller-certs
+  issuerRef:
+    name: depin-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+  - depin-admission-controller.depin-system.svc
+  - depin-admission-controller.depin-system.svc.cluster.local

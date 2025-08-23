@@ -1,0 +1,172 @@
+# Network Policies for DePIN AI Compute Workloads
+# These policies define allowed traffic patterns for AI compute services
+
+# Allow AI compute pods to communicate with each other for distributed computing
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-compute-internal
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/policy-type: ai-compute
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/workload-type: ai-compute
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-ai-compute
+      podSelector:
+        matchLabels:
+          depin.ai/workload-type: ai-compute
+    ports:
+    - protocol: TCP
+      port: 8080  # AI service communication
+    - protocol: TCP
+      port: 8443  # Secure AI service communication
+    - protocol: TCP
+      port: 6379  # Redis for caching/coordination
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-ai-compute
+      podSelector:
+        matchLabels:
+          depin.ai/workload-type: ai-compute
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+    - protocol: TCP
+      port: 6379
+
+---
+# Allow AI compute pods to access storage services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-compute-storage-access
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/policy-type: storage-access
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/workload-type: ai-compute
+  policyTypes:
+  - Egress
+  egress:
+  # Access to persistent storage (CSI drivers)
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+      podSelector:
+        matchLabels:
+          app: csi-hostpathplugin
+    ports:
+    - protocol: TCP
+      port: 9090
+  # Access to distributed storage (if using Ceph/MinIO)
+  - to:
+    - podSelector:
+        matchLabels:
+          depin.ai/component: storage
+    ports:
+    - protocol: TCP
+      port: 9000  # MinIO
+    - protocol: TCP
+      port: 6789  # Ceph MON
+    - protocol: TCP
+      port: 6800  # Ceph OSD
+
+---
+# Allow AI compute pods to access DNS and system services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-compute-system-access
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/policy-type: system-access
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/workload-type: ai-compute
+  policyTypes:
+  - Egress
+  egress:
+  # DNS access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Kubernetes API access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # Kubernetes API server
+  # NTP for time synchronization
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 123
+
+---
+# Allow AI compute pods to be accessed by ingress controllers
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-compute-ingress-access
+  namespace: depin-ai-compute
+  labels:
+    depin.ai/policy-type: ingress-access
+spec:
+  podSelector:
+    matchLabels:
+      depin.ai/workload-type: ai-compute
+      depin.ai/expose: "true"
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow access from ingress controllers
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Allow access from depin-edge namespace for API gateway
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: depin-edge
+      podSelector:
+        matchLabels:
+          depin.ai/component: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
