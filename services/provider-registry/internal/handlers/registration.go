@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/lcanady/depin/services/provider-registry/internal/auth"
 	"github.com/lcanady/depin/services/provider-registry/internal/middleware"
 	"github.com/lcanady/depin/services/provider-registry/internal/validation"

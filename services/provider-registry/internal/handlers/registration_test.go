@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/lcanady/depin/services/provider-registry/internal/auth"
 	"github.com/lcanady/depin/services/provider-registry/internal/validation"
 	"github.com/lcanady/depin/services/provider-registry/pkg/types"
@@ -22,7 +23,7 @@ type MockProviderRepository struct {
 	mock.Mock
 }
 
-func (m *MockProviderRepository) GetByID(id string) (*types.Provider, error) {
+func (m *MockProviderRepository) GetByID(id uuid.UUID) (*types.Provider, error) {
 	args := m.Called(id)
 	return args.Get(0).(*types.Provider), args.Error(1)
 }
@@ -42,7 +43,7 @@ func (m *MockProviderRepository) Update(provider *types.Provider) error {
 	return args.Error(0)
 }
 
-func (m *MockProviderRepository) UpdateLastSeen(id string) error {
+func (m *MockProviderRepository) UpdateLastSeen(id uuid.UUID) error {
 	args := m.Called(id)
 	return args.Error(0)
 }
@@ -155,6 +156,6 @@ func TestRegistrationHandler_Register_MissingRequiredFields(t *testing.T) {
 	var errorResp types.ErrorResponse
 	err := json.Unmarshal(resp.Body.Bytes(), &errorResp)
 	assert.NoError(t, err)
-	assert.Equal(t, "Validation Failed", errorResp.Error)
-	assert.NotEmpty(t, errorResp.ValidationErrors)
+	assert.Equal(t, "Bad Request", errorResp.Error)
+	assert.Contains(t, errorResp.Message, "Invalid request format")
 }

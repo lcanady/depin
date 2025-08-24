@@ -102,7 +102,7 @@ func OptionalAuthMiddleware(authService AuthService) gin.HandlerFunc {
 // RequireProviderStatus ensures the authenticated provider has specific status
 func RequireProviderStatus(authService AuthService, allowedStatuses ...types.ProviderStatus) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		providerID, exists := c.Get("provider_id")
+		_, exists := c.Get("provider_id")
 		if !exists {
 			c.JSON(http.StatusUnauthorized, types.ErrorResponse{
 				Error:     "Unauthorized",

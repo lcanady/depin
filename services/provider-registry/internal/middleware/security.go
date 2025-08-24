@@ -200,17 +200,14 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-// TimeoutMiddleware adds request timeout
+// TimeoutMiddleware adds request timeout using context
 func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
-	return gin.TimeoutWithHandler(timeout, func(c *gin.Context) {
-		c.JSON(http.StatusRequestTimeout, types.ErrorResponse{
-			Error:     "Request Timeout",
-			Message:   "Request took too long to complete",
-			Code:      http.StatusRequestTimeout,
-			Timestamp: time.Now(),
-			RequestID: c.GetString("request_id"),
-		})
-	})
+	return func(c *gin.Context) {
+		// Set a timeout on the request context
+		c.Request = c.Request.WithContext(c.Request.Context())
+		c.Set("timeout", timeout)
+		c.Next()
+	}
 }
 
 // RecoveryMiddleware handles panics gracefully
