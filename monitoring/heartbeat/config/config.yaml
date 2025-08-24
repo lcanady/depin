@@ -1,0 +1,261 @@
+# Heartbeat Monitoring Service Configuration
+
+server:
+  grpc_port: 8082
+  http_port: 8083
+  shutdown_timeout: 30s
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: localhost
+  port: 5432
+  database: depin_heartbeat
+  username: heartbeat_user
+  password: ${POSTGRES_PASSWORD}
+  ssl_mode: prefer
+  max_open_connections: 25
+  max_idle_connections: 10
+  connection_max_lifetime: 300s
+
+redis:
+  addr: localhost:6379
+  password: ${REDIS_PASSWORD}
+  db: 3
+  pool_size: 10
+  min_idle_connections: 3
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+monitoring:
+  # Heartbeat configuration
+  heartbeat_interval: 30s
+  heartbeat_timeout: 60s
+  max_missed_heartbeats: 3
+  
+  # Background process intervals
+  health_check_interval: 10s
+  cleanup_interval: 5m
+  
+  # Event streaming
+  event_buffer_size: 1000
+  max_event_streams: 100
+  
+  # Thresholds for alerting
+  thresholds:
+    cpu_utilization_warning: 80.0
+    cpu_utilization_critical: 95.0
+    memory_utilization_warning: 85.0
+    memory_utilization_critical: 95.0
+    disk_utilization_warning: 90.0
+    disk_utilization_critical: 98.0
+    response_time_warning: 500.0  # milliseconds
+    response_time_critical: 1000.0 # milliseconds
+    uptime_minimum: 95.0 # percentage
+
+service:
+  # Event streaming limits
+  max_event_streams: 100
+  event_buffer_size: 1000
+  max_availability_streams: 50
+  availability_buffer_size: 500
+  default_stream_timeout: 1h
+  
+  # Resource availability tracking
+  availability_check_interval: 30s
+  resource_staleness_threshold: 5m
+
+health_checks:
+  # System health check configuration
+  system_checks:
+    - name: database_connection
+      interval: 30s
+      timeout: 10s
+      enabled: true
+    - name: redis_connection
+      interval: 30s
+      timeout: 5s
+      enabled: true
+    - name: disk_space
+      interval: 60s
+      timeout: 5s
+      enabled: true
+    - name: memory_usage
+      interval: 30s
+      timeout: 2s
+      enabled: true
+  
+  # Provider-specific health checks
+  provider_checks:
+    - name: resource_status
+      interval: 60s
+      timeout: 30s
+      enabled: true
+      required: true
+    - name: performance_metrics
+      interval: 120s
+      timeout: 45s
+      enabled: true
+      required: false
+    - name: connectivity_check
+      interval: 300s
+      timeout: 30s
+      enabled: true
+      required: false
+
+alerting:
+  # Alert configuration
+  enabled: true
+  
+  # Alert channels
+  channels:
+    email:
+      enabled: false
+      smtp_server: smtp.example.com
+      smtp_port: 587
+      username: ${SMTP_USERNAME}
+      password: ${SMTP_PASSWORD}
+      from: heartbeat@depin.io
+      recipients:
+        - ops@depin.io
+    
+    webhook:
+      enabled: true
+      url: ${WEBHOOK_URL}
+      timeout: 30s
+      retry_attempts: 3
+      retry_interval: 5s
+    
+    slack:
+      enabled: false
+      webhook_url: ${SLACK_WEBHOOK_URL}
+      channel: "#alerts"
+      username: "DePIN Heartbeat"
+
+  # Alert rules
+  rules:
+    - name: provider_offline
+      condition: "provider_status == 'unreachable'"
+      severity: critical
+      duration: 2m
+      description: "Provider has been unreachable for 2 minutes"
+    
+    - name: high_cpu_utilization
+      condition: "cpu_utilization > 95"
+      severity: critical
+      duration: 5m
+      description: "CPU utilization above 95% for 5 minutes"
+    
+    - name: high_memory_utilization
+      condition: "memory_utilization > 95"
+      severity: critical
+      duration: 5m
+      description: "Memory utilization above 95% for 5 minutes"
+    
+    - name: disk_space_low
+      condition: "disk_utilization > 95"
+      severity: warning
+      duration: 1m
+      description: "Disk utilization above 95%"
+    
+    - name: resource_failure
+      condition: "resource_error_count > 0"
+      severity: high
+      duration: 1m
+      description: "One or more resources in error state"
+    
+    - name: performance_degradation
+      condition: "response_time > 1000"
+      severity: warning
+      duration: 3m
+      description: "Average response time above 1 second for 3 minutes"
+
+resource_tracking:
+  # Resource availability configuration
+  track_availability: true
+  availability_cache_ttl: 30s
+  max_cached_resources: 10000
+  
+  # Resource types to track
+  tracked_types:
+    - gpu
+    - cpu
+    - memory
+    - storage
+    - network
+  
+  # Resource state transitions
+  state_transitions:
+    - from: available
+      to: allocated
+      notify: true
+    - from: allocated
+      to: available
+      notify: true
+    - from: available
+      to: error
+      notify: true
+    - from: error
+      to: available
+      notify: true
+
+security:
+  # JWT validation
+  jwt_secret: ${JWT_SECRET}
+  jwt_issuer: depin-provider-registry
+  jwt_audience: depin-services
+  
+  # Rate limiting
+  rate_limit:
+    requests_per_minute: 120
+    burst_size: 20
+    enabled: true
+  
+  # TLS configuration
+  tls:
+    enabled: false
+    cert_file: ${TLS_CERT_FILE}
+    key_file: ${TLS_KEY_FILE}
+    ca_file: ${TLS_CA_FILE}
+
+logging:
+  level: info
+  format: json
+  output: stdout
+  
+  # Structured logging fields
+  include_caller: false
+  include_hostname: true
+  include_timestamp: true
+  
+  # Log rotation (if logging to file)
+  max_size: 100 # MB
+  max_age: 30   # days
+  max_backups: 10
+  compress: true
+
+metrics:
+  # Prometheus metrics
+  enabled: true
+  port: 9102
+  path: /metrics
+  
+  # Custom metrics
+  collect_system_metrics: true
+  collect_provider_metrics: true
+  collect_resource_metrics: true
+  
+  # Metric retention
+  retention_period: 7d
+  cleanup_interval: 1h
+
+tracing:
+  # Distributed tracing
+  enabled: false
+  jaeger_endpoint: http://localhost:14268/api/traces
+  sample_rate: 0.1
+  
+  # Trace export
+  export_timeout: 30s
+  max_export_batch_size: 100
