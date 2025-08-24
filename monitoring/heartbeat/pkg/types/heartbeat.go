@@ -289,3 +289,30 @@ type ResourceCapabilities struct {
 	StorageType       string  `json:"storage_type,omitempty"`
 	MaxIOPS           float64 `json:"max_iops,omitempty"`
 }
+
+// AvailabilityEvent represents an availability change event  
+type AvailabilityEvent struct {
+	EventType    AvailabilityEventType `json:"event_type"`
+	ResourceID   string                `json:"resource_id"`
+	ResourceType string                `json:"resource_type"`
+	ProviderID   uuid.UUID             `json:"provider_id"`
+	ProviderName string                `json:"provider_name"`
+	OldState     ResourceState         `json:"old_state"`
+	NewState     ResourceState         `json:"new_state"`
+	Capabilities *ResourceCapabilities `json:"capabilities,omitempty"`
+	Region       string                `json:"region"`
+	Message      string                `json:"message"`
+	Timestamp    time.Time             `json:"timestamp"`
+}
+
+// AvailabilityEventType defines the types of availability events
+type AvailabilityEventType int
+
+const (
+	AvailabilityResourceAvailable AvailabilityEventType = iota
+	AvailabilityResourceAllocated
+	AvailabilityResourceReleased
+	AvailabilityResourceDegraded
+	AvailabilityResourceRestored
+	AvailabilityResourceOffline
+)
