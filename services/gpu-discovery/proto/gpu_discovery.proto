@@ -1,0 +1,254 @@
+syntax = "proto3";
+
+package gpu_discovery;
+
+option go_package = "github.com/lcanady/depin/services/gpu-discovery/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// GPU Discovery Service Definition
+service GPUDiscoveryService {
+    // Discover all GPUs on the current system
+    rpc DiscoverGPUs(DiscoverRequest) returns (DiscoverResponse);
+    
+    // Get detailed information about a specific GPU
+    rpc GetGPUInfo(GetGPUInfoRequest) returns (GetGPUInfoResponse);
+    
+    // Monitor GPU changes (streaming)
+    rpc MonitorGPUs(MonitorRequest) returns (stream GPUChangeEvent);
+    
+    // Perform capability benchmark on GPU
+    rpc BenchmarkGPU(BenchmarkRequest) returns (BenchmarkResponse);
+    
+    // Get system GPU summary
+    rpc GetSystemSummary(SystemSummaryRequest) returns (SystemSummaryResponse);
+}
+
+// Request to discover GPUs
+message DiscoverRequest {
+    bool force_refresh = 1;
+    repeated string vendor_filter = 2; // Filter by vendor (nvidia, amd, intel)
+}
+
+// Response with discovered GPUs
+message DiscoverResponse {
+    repeated GPUInfo gpus = 1;
+    google.protobuf.Timestamp discovery_time = 2;
+    string system_id = 3;
+}
+
+// Request for specific GPU info
+message GetGPUInfoRequest {
+    string gpu_id = 1;
+    bool include_benchmarks = 2;
+}
+
+// Response with GPU details
+message GetGPUInfoResponse {
+    GPUInfo gpu = 1;
+    repeated BenchmarkResult benchmarks = 2;
+}
+
+// Monitor request for GPU changes
+message MonitorRequest {
+    int32 polling_interval_seconds = 1;
+    bool include_performance_metrics = 2;
+}
+
+// GPU change event
+message GPUChangeEvent {
+    enum ChangeType {
+        UNKNOWN = 0;
+        ADDED = 1;
+        REMOVED = 2;
+        MODIFIED = 3;
+        PERFORMANCE_UPDATE = 4;
+    }
+    
+    ChangeType change_type = 1;
+    GPUInfo gpu = 2;
+    google.protobuf.Timestamp timestamp = 3;
+    string description = 4;
+}
+
+// Benchmark request
+message BenchmarkRequest {
+    string gpu_id = 1;
+    repeated string benchmark_types = 2; // compute, memory, tensor
+    int32 duration_seconds = 3;
+}
+
+// Benchmark response
+message BenchmarkResponse {
+    string gpu_id = 1;
+    repeated BenchmarkResult results = 2;
+    google.protobuf.Timestamp benchmark_time = 3;
+}
+
+// System summary request
+message SystemSummaryRequest {
+    bool include_offline_gpus = 1;
+}
+
+// System summary response
+message SystemSummaryResponse {
+    int32 total_gpus = 1;
+    int32 available_gpus = 2;
+    int64 total_memory_mb = 3;
+    int64 available_memory_mb = 4;
+    repeated string supported_vendors = 5;
+    map<string, int32> gpu_count_by_vendor = 6;
+}
+
+// GPU Information Structure
+message GPUInfo {
+    // Identification
+    string gpu_id = 1;
+    string name = 2;
+    string vendor = 3; // nvidia, amd, intel
+    string uuid = 4;
+    int32 index = 5;
+    
+    // Hardware Specifications
+    GPUSpecs specs = 6;
+    
+    // Current Status
+    GPUStatus status = 7;
+    
+    // Capabilities
+    GPUCapabilities capabilities = 8;
+    
+    // Driver and Software
+    DriverInfo driver = 9;
+    
+    // Discovery metadata
+    google.protobuf.Timestamp last_seen = 10;
+    string discovery_source = 11; // nvml, rocm, intel
+}
+
+// GPU Hardware Specifications
+message GPUSpecs {
+    // Memory
+    int64 memory_total_mb = 1;
+    int64 memory_bandwidth_gbps = 2;
+    
+    // Compute
+    int32 cuda_cores = 3; // NVIDIA specific
+    int32 stream_processors = 4; // AMD specific
+    int32 execution_units = 5; // Intel specific
+    int32 tensor_cores = 6; // If available
+    
+    // Clock Speeds (MHz)
+    int32 base_clock_mhz = 7;
+    int32 boost_clock_mhz = 8;
+    int32 memory_clock_mhz = 9;
+    
+    // Architecture
+    string architecture = 10; // Ada Lovelace, RDNA3, Xe, etc.
+    string compute_capability = 11; // CUDA compute capability
+    int32 sm_count = 12; // Streaming multiprocessors
+    
+    // Power
+    int32 power_limit_watts = 13;
+    int32 default_power_limit_watts = 14;
+    
+    // Connectivity
+    string bus_type = 15; // PCIe
+    string bus_width = 16; // x16, x8, etc.
+    int32 pcie_generation = 17;
+}
+
+// Current GPU Status
+message GPUStatus {
+    enum State {
+        UNKNOWN = 0;
+        IDLE = 1;
+        BUSY = 2;
+        OFFLINE = 3;
+        ERROR = 4;
+    }
+    
+    State state = 1;
+    
+    // Utilization (0-100%)
+    int32 gpu_utilization = 2;
+    int32 memory_utilization = 3;
+    
+    // Memory Usage
+    int64 memory_used_mb = 4;
+    int64 memory_free_mb = 5;
+    
+    // Temperature (Celsius)
+    int32 temperature_gpu = 6;
+    int32 temperature_memory = 7;
+    
+    // Power Usage
+    int32 power_draw_watts = 8;
+    
+    // Clock Speeds (current)
+    int32 current_gpu_clock_mhz = 9;
+    int32 current_memory_clock_mhz = 10;
+    
+    // Processes
+    repeated ProcessInfo processes = 11;
+}
+
+// Process using GPU
+message ProcessInfo {
+    int32 pid = 1;
+    string name = 2;
+    int64 memory_usage_mb = 3;
+    string type = 4; // compute, graphics
+}
+
+// GPU Capabilities
+message GPUCapabilities {
+    // Compute APIs
+    bool supports_cuda = 1;
+    bool supports_opencl = 2;
+    bool supports_vulkan = 3;
+    bool supports_directx = 4;
+    
+    // AI/ML Features
+    bool supports_tensor_ops = 5;
+    bool supports_mixed_precision = 6;
+    bool supports_ray_tracing = 7;
+    
+    // Memory Features
+    bool supports_ecc = 8;
+    bool ecc_enabled = 9;
+    bool supports_unified_memory = 10;
+    
+    // Virtualization
+    bool supports_mig = 11; // Multi-Instance GPU
+    bool supports_sriov = 12; // SR-IOV
+    
+    // Supported precision types
+    repeated string precision_types = 13; // fp32, fp16, int8, etc.
+    
+    // Maximum dimensions
+    int32 max_threads_per_block = 14;
+    int32 max_blocks_per_grid = 15;
+}
+
+// Driver Information
+message DriverInfo {
+    string version = 1;
+    string cuda_version = 2; // NVIDIA
+    string rocm_version = 3; // AMD
+    string level_zero_version = 4; // Intel
+    google.protobuf.Timestamp install_date = 5;
+    bool is_compatible = 6;
+    repeated string supported_apis = 7;
+}
+
+// Benchmark Results
+message BenchmarkResult {
+    string benchmark_type = 1; // compute, memory, tensor
+    string test_name = 2;
+    double score = 3;
+    string unit = 4; // GFLOPS, GB/s, etc.
+    int32 duration_seconds = 5;
+    map<string, string> metadata = 6;
+    google.protobuf.Timestamp timestamp = 7;
+}

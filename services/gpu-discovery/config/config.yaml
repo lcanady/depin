@@ -1,0 +1,83 @@
+# GPU Discovery Service Configuration
+
+# Logging configuration
+log:
+  level: info      # debug, info, warn, error
+  format: text     # text, json
+
+# gRPC Server settings
+server:
+  port: 50051
+  max_message_size: 4194304  # 4MB
+
+# GPU Detection settings
+detection:
+  # Vendor enablement
+  enable_nvidia: true
+  enable_amd: true
+  enable_intel: true
+  
+  # Monitoring intervals (seconds)
+  monitoring_interval: 30
+  discovery_timeout: 30
+  benchmark_timeout: 60
+  
+  # Auto-discovery settings
+  enable_auto_discovery: true
+  auto_discovery_interval: 60  # seconds
+  cache_timeout: 300          # seconds (5 minutes)
+  
+  # Benchmark settings
+  enable_benchmarks: true
+  default_benchmark_duration: 30  # seconds
+  benchmark_types:
+    - compute
+    - memory
+    # - tensor  # Enable if tensor core testing is desired
+
+# Vendor-specific configurations
+nvidia:
+  # NVML specific settings
+  enable_nvml_profiling: true
+  enable_mig_detection: true
+  
+amd:
+  # ROCm specific settings
+  rocm_smi_path: "/opt/rocm/bin/rocm-smi"
+  enable_rocm_profiling: true
+  
+intel:
+  # Intel GPU tools specific settings
+  intel_gpu_top_path: "/usr/bin/intel_gpu_top"
+  enable_level_zero: true
+
+# Monitoring and Metrics
+metrics:
+  enabled: true
+  port: 9090
+  path: "/metrics"
+
+# Health Check settings
+health:
+  enabled: true
+  interval: 60  # seconds
+  timeout: 10   # seconds
+
+# Security settings (for production)
+security:
+  # TLS settings
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+  
+  # Authentication
+  auth:
+    enabled: false
+    api_keys: []
+
+# Resource limits
+limits:
+  max_concurrent_benchmarks: 3
+  max_discovery_retries: 3
+  discovery_retry_delay: 5  # seconds
