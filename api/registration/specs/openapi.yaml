@@ -1,0 +1,437 @@
+openapi: 3.0.3
+info:
+  title: DePIN Provider Registration API
+  description: API for registering and managing compute resource providers in the DePIN network
+  version: 1.0.0
+  contact:
+    name: DePIN Team
+    email: support@depin.example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Development server
+  - url: https://api.depin.example.com/api/v1
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /registration/register:
+    post:
+      summary: Register a new provider
+      description: Register a new compute resource provider in the DePIN network
+      tags:
+        - Registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+      responses:
+        '201':
+          description: Provider registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationResponse'
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Provider already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /registration/auth:
+    post:
+      summary: Authenticate provider
+      description: Authenticate provider credentials and receive access token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /registration/profile:
+    get:
+      summary: Get provider profile
+      description: Retrieve the authenticated provider's profile information
+      tags:
+        - Profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Provider profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update provider profile
+      description: Update the authenticated provider's profile information
+      tags:
+        - Profile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Provider'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /registration/refresh:
+    post:
+      summary: Refresh access token
+      description: Generate a new access token for the authenticated provider
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /registration/health:
+    get:
+      summary: Health check
+      description: Check if the registration service is healthy
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: provider-registry
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: 1.0.0
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegistrationRequest:
+      type: object
+      required:
+        - name
+        - email
+        - public_key
+        - endpoints
+        - terms
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 100
+          example: "ACME Compute Provider"
+          description: "Name of the provider organization"
+        email:
+          type: string
+          format: email
+          example: "admin@acme.com"
+          description: "Contact email for the provider"
+        organization:
+          type: string
+          example: "ACME Corp"
+          description: "Optional organization name"
+        public_key:
+          type: string
+          example: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEF..."
+          description: "RSA public key in PEM format (minimum 2048 bits)"
+        endpoints:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Endpoint'
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        terms:
+          type: boolean
+          example: true
+          description: "Must be true to accept terms and conditions"
+
+    RegistrationResponse:
+      type: object
+      properties:
+        provider_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        api_key:
+          type: string
+          example: "pk_1234567890abcdef..."
+          description: "API key for authentication (store securely)"
+        status:
+          type: string
+          example: "pending"
+        message:
+          type: string
+          example: "Provider registered successfully. Activation pending."
+        expires_at:
+          type: string
+          format: date-time
+
+    AuthRequest:
+      type: object
+      required:
+        - provider_id
+        - api_key
+      properties:
+        provider_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        api_key:
+          type: string
+          example: "pk_1234567890abcdef..."
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          description: "JWT access token"
+        token_type:
+          type: string
+          example: "Bearer"
+        expires_at:
+          type: string
+          format: date-time
+
+    Provider:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+          readOnly: true
+        name:
+          type: string
+          minLength: 3
+          maxLength: 100
+          example: "ACME Compute Provider"
+        email:
+          type: string
+          format: email
+          example: "admin@acme.com"
+        organization:
+          type: string
+          example: "ACME Corp"
+        status:
+          type: string
+          enum: [pending, active, inactive, suspended]
+          example: "active"
+          readOnly: true
+        public_key:
+          type: string
+          example: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEF..."
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Endpoint'
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_seen:
+          type: string
+          format: date-time
+          readOnly: true
+
+    Endpoint:
+      type: object
+      required:
+        - type
+        - url
+        - protocol
+      properties:
+        type:
+          type: string
+          enum: [api, grpc, websocket]
+          example: "api"
+          description: "Type of endpoint"
+        url:
+          type: string
+          format: uri
+          example: "https://api.acme.com"
+          description: "Base URL for the endpoint"
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          example: 443
+          description: "Port number (optional, defaults based on protocol)"
+        protocol:
+          type: string
+          enum: [http, https, grpc, grpc+tls, websocket, wss]
+          example: "https"
+          description: "Protocol used by the endpoint"
+        secure:
+          type: boolean
+          example: true
+          description: "Whether the endpoint uses secure communication"
+
+    Metadata:
+      type: object
+      properties:
+        region:
+          type: string
+          example: "us-west-2"
+          description: "Geographic region"
+        data_center:
+          type: string
+          example: "dc-west-01"
+          description: "Data center identifier"
+        supported_formats:
+          type: array
+          items:
+            type: string
+          example: ["ONNX", "TensorRT", "PyTorch"]
+          description: "Supported AI model formats"
+        certifications:
+          type: array
+          items:
+            type: string
+          example: ["SOC2", "ISO27001"]
+          description: "Security certifications"
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            environment: "production"
+            tier: "premium"
+          description: "Custom key-value tags"
+        version:
+          type: string
+          example: "1.2.3"
+          description: "Provider software version"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Bad Request"
+        message:
+          type: string
+          example: "Invalid request format"
+        code:
+          type: integer
+          example: 400
+        validation_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+        timestamp:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+          format: uuid
+
+    ValidationError:
+      type: object
+      properties:
+        field:
+          type: string
+          example: "email"
+        message:
+          type: string
+          example: "Invalid email format"
+        code:
+          type: string
+          example: "INVALID_EMAIL"
