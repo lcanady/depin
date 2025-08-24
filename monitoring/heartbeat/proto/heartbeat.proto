@@ -1,0 +1,537 @@
+syntax = "proto3";
+
+package heartbeat;
+
+option go_package = "github.com/lcanady/depin/monitoring/heartbeat/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Heartbeat Monitoring Service Definition
+service HeartbeatService {
+    // Provider heartbeat endpoint
+    rpc SendHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+    
+    // Stream heartbeat events
+    rpc StreamHeartbeats(HeartbeatStreamRequest) returns (stream HeartbeatEvent);
+    
+    // Get provider health status
+    rpc GetProviderHealth(ProviderHealthRequest) returns (ProviderHealthResponse);
+    
+    // Get system health overview
+    rpc GetSystemHealth(SystemHealthRequest) returns (SystemHealthResponse);
+    
+    // Configure monitoring parameters
+    rpc ConfigureMonitoring(MonitoringConfigRequest) returns (MonitoringConfigResponse);
+    
+    // Get resource availability
+    rpc GetResourceAvailability(AvailabilityRequest) returns (AvailabilityResponse);
+    
+    // Register for availability notifications
+    rpc SubscribeToAvailability(AvailabilitySubscriptionRequest) returns (stream AvailabilityEvent);
+}
+
+// Heartbeat Request from Provider
+message HeartbeatRequest {
+    string provider_id = 1;
+    string provider_name = 2;
+    ProviderStatus status = 3;
+    SystemMetrics system_metrics = 4;
+    repeated ResourceStatus resources = 5;
+    string version = 6;
+    map<string, string> metadata = 7;
+    google.protobuf.Timestamp timestamp = 8;
+}
+
+// Heartbeat Response to Provider
+message HeartbeatResponse {
+    bool accepted = 1;
+    string message = 2;
+    int32 next_heartbeat_interval = 3; // seconds
+    repeated HealthCheck required_checks = 4;
+    repeated string warnings = 5;
+    google.protobuf.Timestamp server_timestamp = 6;
+}
+
+// Provider Status
+enum ProviderStatus {
+    UNKNOWN = 0;
+    HEALTHY = 1;
+    DEGRADED = 2;
+    UNHEALTHY = 3;
+    MAINTENANCE = 4;
+    OFFLINE = 5;
+}
+
+// System Metrics
+message SystemMetrics {
+    double cpu_utilization = 1;
+    double memory_utilization = 2;
+    double disk_utilization = 3;
+    double network_rx_mbps = 4;
+    double network_tx_mbps = 5;
+    double load_average = 6;
+    int64 uptime_seconds = 7;
+    double temperature_celsius = 8;
+    double power_consumption_watts = 9;
+}
+
+// Resource Status
+message ResourceStatus {
+    string resource_id = 1;
+    string resource_type = 2; // gpu, cpu, memory, storage
+    string name = 3;
+    ResourceState state = 4;
+    double utilization = 5;
+    ResourceMetrics metrics = 6;
+    repeated string issues = 7;
+    google.protobuf.Timestamp last_updated = 8;
+}
+
+// Resource State
+enum ResourceState {
+    RESOURCE_UNKNOWN = 0;
+    AVAILABLE = 1;
+    ALLOCATED = 2;
+    BUSY = 3;
+    ERROR = 4;
+    MAINTENANCE_MODE = 5;
+    OFFLINE = 6;
+}
+
+// Resource Metrics (specific to resource type)
+message ResourceMetrics {
+    // GPU-specific metrics
+    GPUMetrics gpu = 1;
+    
+    // CPU-specific metrics
+    CPUMetrics cpu = 2;
+    
+    // Memory-specific metrics
+    MemoryMetrics memory = 3;
+    
+    // Storage-specific metrics
+    StorageMetrics storage = 4;
+}
+
+message GPUMetrics {
+    int32 gpu_utilization = 1;
+    int32 memory_utilization = 2;
+    int64 memory_used_mb = 3;
+    int64 memory_total_mb = 4;
+    int32 temperature_gpu = 5;
+    int32 power_draw_watts = 6;
+    int32 fan_speed_rpm = 7;
+    repeated ProcessInfo processes = 8;
+}
+
+message CPUMetrics {
+    double utilization = 1;
+    double load_average_1m = 2;
+    double load_average_5m = 3;
+    double load_average_15m = 4;
+    int32 temperature_celsius = 5;
+    double frequency_mhz = 6;
+}
+
+message MemoryMetrics {
+    int64 total_mb = 1;
+    int64 used_mb = 2;
+    int64 available_mb = 3;
+    double utilization = 4;
+    int64 swap_total_mb = 5;
+    int64 swap_used_mb = 6;
+}
+
+message StorageMetrics {
+    int64 total_gb = 1;
+    int64 used_gb = 2;
+    int64 available_gb = 3;
+    double utilization = 4;
+    double read_iops = 5;
+    double write_iops = 6;
+    double read_mbps = 7;
+    double write_mbps = 8;
+}
+
+message ProcessInfo {
+    int32 pid = 1;
+    string name = 2;
+    string command = 3;
+    int64 memory_usage_mb = 4;
+    double cpu_utilization = 5;
+    google.protobuf.Timestamp start_time = 6;
+}
+
+// Health Check Definition
+message HealthCheck {
+    string check_id = 1;
+    string check_type = 2; // performance, connectivity, resource
+    string description = 3;
+    int32 frequency_seconds = 4;
+    map<string, string> parameters = 5;
+    bool required = 6;
+}
+
+// Heartbeat Stream Request
+message HeartbeatStreamRequest {
+    repeated string provider_ids = 1;
+    repeated ProviderStatus status_filter = 2;
+    bool include_metrics = 3;
+    bool include_resources = 4;
+}
+
+// Heartbeat Event
+message HeartbeatEvent {
+    enum EventType {
+        HEARTBEAT_RECEIVED = 0;
+        STATUS_CHANGED = 1;
+        RESOURCE_CHANGED = 2;
+        THRESHOLD_EXCEEDED = 3;
+        CONNECTION_LOST = 4;
+        CONNECTION_RESTORED = 5;
+    }
+    
+    EventType event_type = 1;
+    string provider_id = 2;
+    string provider_name = 3;
+    ProviderStatus old_status = 4;
+    ProviderStatus new_status = 5;
+    string resource_id = 6;
+    string message = 7;
+    map<string, string> metadata = 8;
+    google.protobuf.Timestamp timestamp = 9;
+}
+
+// Provider Health Request
+message ProviderHealthRequest {
+    string provider_id = 1;
+    bool include_resources = 2;
+    bool include_history = 3;
+    int32 history_hours = 4;
+}
+
+// Provider Health Response
+message ProviderHealthResponse {
+    string provider_id = 1;
+    string provider_name = 2;
+    ProviderStatus status = 3;
+    double health_score = 4;
+    SystemMetrics latest_metrics = 5;
+    repeated ResourceStatus resources = 6;
+    HealthSummary health_summary = 7;
+    repeated HealthIncident recent_incidents = 8;
+    google.protobuf.Timestamp last_heartbeat = 9;
+    google.protobuf.Timestamp next_expected_heartbeat = 10;
+}
+
+// Health Summary
+message HealthSummary {
+    double uptime_percentage = 1;
+    double avg_response_time_ms = 2;
+    int32 total_resources = 3;
+    int32 healthy_resources = 4;
+    int32 degraded_resources = 5;
+    int32 failed_resources = 6;
+    int32 consecutive_successful_heartbeats = 7;
+    int32 consecutive_failed_heartbeats = 8;
+    google.protobuf.Timestamp last_incident = 9;
+}
+
+// Health Incident
+message HealthIncident {
+    string incident_id = 1;
+    string provider_id = 2;
+    string resource_id = 3; // Optional, for resource-specific incidents
+    IncidentType type = 4;
+    IncidentSeverity severity = 5;
+    string title = 6;
+    string description = 7;
+    IncidentStatus status = 8;
+    google.protobuf.Timestamp occurred_at = 9;
+    google.protobuf.Timestamp resolved_at = 10;
+    google.protobuf.Timestamp last_updated = 11;
+    map<string, string> metadata = 12;
+}
+
+enum IncidentType {
+    INCIDENT_UNKNOWN = 0;
+    HEARTBEAT_MISSED = 1;
+    RESOURCE_FAILURE = 2;
+    PERFORMANCE_DEGRADATION = 3;
+    THRESHOLD_VIOLATION = 4;
+    CONNECTIVITY_ISSUE = 5;
+    SECURITY_ALERT = 6;
+}
+
+enum IncidentSeverity {
+    SEVERITY_UNKNOWN = 0;
+    LOW = 1;
+    MEDIUM = 2;
+    HIGH = 3;
+    CRITICAL = 4;
+}
+
+enum IncidentStatus {
+    STATUS_UNKNOWN = 0;
+    OPEN = 1;
+    INVESTIGATING = 2;
+    RESOLVED = 3;
+    CLOSED = 4;
+}
+
+// System Health Request
+message SystemHealthRequest {
+    bool include_providers = 1;
+    bool include_resources = 2;
+    bool include_aggregates = 3;
+}
+
+// System Health Response
+message SystemHealthResponse {
+    SystemStatus overall_status = 1;
+    double overall_health_score = 2;
+    SystemStatistics statistics = 3;
+    repeated ProviderHealthSummary providers = 4;
+    repeated ResourceTypeSummary resource_types = 5;
+    repeated SystemAlert active_alerts = 6;
+    google.protobuf.Timestamp generated_at = 7;
+}
+
+enum SystemStatus {
+    SYSTEM_UNKNOWN = 0;
+    SYSTEM_HEALTHY = 1;
+    SYSTEM_DEGRADED = 2;
+    SYSTEM_UNHEALTHY = 3;
+    SYSTEM_CRITICAL = 4;
+}
+
+message SystemStatistics {
+    int32 total_providers = 1;
+    int32 healthy_providers = 2;
+    int32 degraded_providers = 3;
+    int32 unhealthy_providers = 4;
+    int32 offline_providers = 5;
+    int32 total_resources = 6;
+    int32 available_resources = 7;
+    int32 allocated_resources = 8;
+    int32 error_resources = 9;
+    double avg_uptime_percentage = 10;
+    double avg_response_time_ms = 11;
+}
+
+message ProviderHealthSummary {
+    string provider_id = 1;
+    string provider_name = 2;
+    ProviderStatus status = 3;
+    double health_score = 4;
+    int32 total_resources = 5;
+    int32 healthy_resources = 6;
+    google.protobuf.Timestamp last_heartbeat = 7;
+}
+
+message ResourceTypeSummary {
+    string resource_type = 1;
+    int32 total_count = 2;
+    int32 available_count = 3;
+    int32 allocated_count = 4;
+    int32 error_count = 5;
+    double avg_utilization = 6;
+}
+
+message SystemAlert {
+    string alert_id = 1;
+    string title = 2;
+    string description = 3;
+    AlertSeverity severity = 4;
+    AlertStatus status = 5;
+    repeated string affected_providers = 6;
+    repeated string affected_resources = 7;
+    google.protobuf.Timestamp triggered_at = 8;
+    map<string, string> metadata = 9;
+}
+
+enum AlertSeverity {
+    ALERT_SEVERITY_UNKNOWN = 0;
+    INFO = 1;
+    WARNING = 2;
+    ERROR = 3;
+    ALERT_CRITICAL = 4;
+}
+
+enum AlertStatus {
+    ALERT_STATUS_UNKNOWN = 0;
+    ACTIVE = 1;
+    ACKNOWLEDGED = 2;
+    SUPPRESSED = 3;
+    ALERT_RESOLVED = 4;
+}
+
+// Monitoring Configuration Request
+message MonitoringConfigRequest {
+    string provider_id = 1;
+    MonitoringConfig config = 2;
+}
+
+// Monitoring Configuration Response
+message MonitoringConfigResponse {
+    bool success = 1;
+    string message = 2;
+    MonitoringConfig applied_config = 3;
+}
+
+// Monitoring Configuration
+message MonitoringConfig {
+    int32 heartbeat_interval_seconds = 1;
+    int32 heartbeat_timeout_seconds = 2;
+    int32 max_missed_heartbeats = 3;
+    repeated ThresholdConfig thresholds = 4;
+    repeated HealthCheckConfig health_checks = 5;
+    NotificationConfig notifications = 6;
+}
+
+message ThresholdConfig {
+    string metric_name = 1;
+    string resource_type = 2; // system, gpu, cpu, memory, storage
+    AlertSeverity warning_threshold = 3;
+    double warning_value = 4;
+    AlertSeverity critical_threshold = 5;
+    double critical_value = 6;
+    int32 duration_seconds = 7; // How long threshold must be exceeded
+}
+
+message HealthCheckConfig {
+    string check_type = 1;
+    bool enabled = 2;
+    int32 frequency_seconds = 3;
+    int32 timeout_seconds = 4;
+    map<string, string> parameters = 5;
+}
+
+message NotificationConfig {
+    bool email_enabled = 1;
+    bool webhook_enabled = 2;
+    bool slack_enabled = 3;
+    repeated string email_addresses = 4;
+    string webhook_url = 5;
+    string slack_channel = 6;
+}
+
+// Resource Availability Request
+message AvailabilityRequest {
+    repeated string resource_types = 1; // gpu, cpu, memory, storage
+    string region = 2;
+    ResourceRequirements requirements = 3;
+    bool include_allocated = 4;
+}
+
+// Resource Availability Response
+message AvailabilityResponse {
+    repeated ResourceAvailability resources = 1;
+    AvailabilitySummary summary = 2;
+    google.protobuf.Timestamp generated_at = 3;
+}
+
+message ResourceAvailability {
+    string resource_id = 1;
+    string resource_type = 2;
+    string provider_id = 3;
+    string provider_name = 4;
+    string name = 5;
+    ResourceState state = 6;
+    ResourceCapabilities capabilities = 7;
+    ResourceMetrics current_metrics = 8;
+    double health_score = 9;
+    google.protobuf.Timestamp last_updated = 10;
+}
+
+message ResourceCapabilities {
+    // GPU capabilities
+    string gpu_vendor = 1;
+    string gpu_architecture = 2;
+    int64 memory_mb = 3;
+    int32 cuda_cores = 4;
+    int32 tensor_cores = 5;
+    repeated string supported_apis = 6;
+    
+    // CPU capabilities
+    int32 cpu_cores = 7;
+    int32 cpu_threads = 8;
+    double cpu_frequency_ghz = 9;
+    string cpu_architecture = 10;
+    
+    // Memory capabilities
+    int64 total_memory_mb = 11;
+    string memory_type = 12;
+    
+    // Storage capabilities
+    int64 storage_capacity_gb = 13;
+    string storage_type = 14;
+    double max_iops = 15;
+}
+
+message ResourceRequirements {
+    // GPU requirements
+    string min_gpu_vendor = 1;
+    string min_gpu_architecture = 2;
+    int64 min_gpu_memory_mb = 3;
+    int32 min_cuda_cores = 4;
+    bool require_tensor_cores = 5;
+    repeated string required_apis = 6;
+    
+    // CPU requirements
+    int32 min_cpu_cores = 7;
+    double min_cpu_frequency_ghz = 8;
+    
+    // Memory requirements
+    int64 min_memory_mb = 9;
+    
+    // Storage requirements
+    int64 min_storage_gb = 10;
+    double min_iops = 11;
+    
+    // General requirements
+    double min_health_score = 12;
+    double max_utilization = 13;
+}
+
+message AvailabilitySummary {
+    int32 total_resources = 1;
+    int32 available_resources = 2;
+    int32 matching_resources = 3;
+    map<string, int32> resources_by_type = 4;
+    map<string, int32> resources_by_provider = 5;
+    map<string, int32> resources_by_region = 6;
+}
+
+// Availability Subscription Request
+message AvailabilitySubscriptionRequest {
+    ResourceRequirements requirements = 1;
+    repeated string regions = 2;
+    bool notify_on_allocation = 3;
+    bool notify_on_release = 4;
+    bool notify_on_degradation = 5;
+}
+
+// Availability Event
+message AvailabilityEvent {
+    enum EventType {
+        RESOURCE_AVAILABLE = 0;
+        RESOURCE_ALLOCATED = 1;
+        RESOURCE_RELEASED = 2;
+        RESOURCE_DEGRADED = 3;
+        RESOURCE_RESTORED = 4;
+        RESOURCE_OFFLINE = 5;
+    }
+    
+    EventType event_type = 1;
+    string resource_id = 2;
+    string resource_type = 3;
+    string provider_id = 4;
+    string provider_name = 5;
+    ResourceState old_state = 6;
+    ResourceState new_state = 7;
+    ResourceCapabilities capabilities = 8;
+    string region = 9;
+    string message = 10;
+    google.protobuf.Timestamp timestamp = 11;
+}

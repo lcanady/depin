@@ -1,0 +1,153 @@
+# Verification Service Configuration
+
+server:
+  grpc_port: 8080
+  http_port: 8081
+  shutdown_timeout: 30s
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: localhost
+  port: 5432
+  database: depin_verification
+  username: verification_user
+  password: ${POSTGRES_PASSWORD}
+  ssl_mode: prefer
+  max_open_connections: 25
+  max_idle_connections: 10
+  connection_max_lifetime: 300s
+
+redis:
+  addr: localhost:6379
+  password: ${REDIS_PASSWORD}
+  db: 2
+  pool_size: 10
+  min_idle_connections: 3
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+gpu_discovery:
+  grpc_address: localhost:9090
+  connection_timeout: 10s
+  call_timeout: 30s
+  max_retries: 3
+
+benchmarking:
+  default_duration: 60
+  max_duration: 300
+  warmup_iterations: 3
+  stress_test_duration: 120
+  parallel_tests: 2
+  timeout_multiplier: 1.5
+  
+  # Benchmark thresholds
+  thresholds:
+    compute:
+      fp32_min_gflops: 1000.0
+      fp16_min_gflops: 2000.0
+      int8_min_tops: 10.0
+    memory:
+      bandwidth_min_gbps: 100.0
+      latency_max_ns: 1000.0
+    tensor:
+      min_tops: 50.0
+      mixed_precision_min_speedup: 1.5
+    stability:
+      min_uptime_percentage: 95.0
+      max_error_rate: 0.01
+      max_temp_celsius: 85.0
+
+scoring:
+  # Scoring weights for overall assessment
+  weights:
+    compute: 0.3
+    memory: 0.2
+    tensor: 0.2
+    stability: 0.15
+    compatibility: 0.15
+  
+  # Grade thresholds
+  grades:
+    A: 90.0
+    B: 80.0
+    C: 70.0
+    D: 60.0
+    F: 0.0
+  
+  # Tier classifications
+  tiers:
+    enterprise: 85.0
+    professional: 75.0
+    standard: 65.0
+    basic: 50.0
+
+compliance:
+  # Supported compliance standards
+  standards:
+    - SOC2
+    - HIPAA
+    - PCI-DSS
+    - GDPR
+    - ISO27001
+    - FedRAMP
+  
+  # Compliance check timeouts
+  check_timeout: 60s
+  max_concurrent_checks: 5
+
+verification:
+  # Result expiration periods
+  expiration:
+    basic: 24h
+    standard: 168h    # 1 week
+    comprehensive: 720h # 30 days
+    certification: 8760h # 1 year
+  
+  # Retry policies
+  retry:
+    max_attempts: 3
+    initial_interval: 5s
+    max_interval: 60s
+    multiplier: 2.0
+  
+  # Queue configurations
+  queue:
+    max_pending: 100
+    worker_count: 5
+    priority_levels: 10
+
+monitoring:
+  # Metrics collection
+  metrics_enabled: true
+  metrics_port: 9100
+  
+  # Health check intervals
+  health_check_interval: 30s
+  database_check_interval: 60s
+  
+  # Logging
+  log_level: info
+  log_format: json
+  
+  # Tracing
+  tracing_enabled: true
+  jaeger_endpoint: http://localhost:14268/api/traces
+
+security:
+  # JWT validation
+  jwt_secret: ${JWT_SECRET}
+  jwt_issuer: depin-provider-registry
+  jwt_audience: depin-services
+  
+  # Rate limiting
+  rate_limit:
+    requests_per_minute: 60
+    burst_size: 10
+  
+  # TLS configuration
+  tls:
+    cert_file: ${TLS_CERT_FILE}
+    key_file: ${TLS_KEY_FILE}
+    ca_file: ${TLS_CA_FILE}

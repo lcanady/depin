@@ -1,0 +1,394 @@
+syntax = "proto3";
+
+package verification;
+
+option go_package = "github.com/lcanady/depin/services/verification/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Verification Service Definition
+service VerificationService {
+    // Verify GPU capabilities
+    rpc VerifyGPUCapability(GPUVerificationRequest) returns (GPUVerificationResponse);
+    
+    // Verify provider capabilities
+    rpc VerifyProviderCapability(ProviderVerificationRequest) returns (ProviderVerificationResponse);
+    
+    // Run comprehensive benchmark suite
+    rpc RunBenchmarkSuite(BenchmarkSuiteRequest) returns (BenchmarkSuiteResponse);
+    
+    // Get verification status
+    rpc GetVerificationStatus(VerificationStatusRequest) returns (VerificationStatusResponse);
+    
+    // Stream verification results
+    rpc StreamVerificationResults(VerificationStreamRequest) returns (stream VerificationEvent);
+    
+    // Validate resource allocation compatibility
+    rpc ValidateAllocation(AllocationValidationRequest) returns (AllocationValidationResponse);
+}
+
+// GPU Verification Request
+message GPUVerificationRequest {
+    string gpu_id = 1;
+    string provider_id = 2;
+    repeated string tests_to_run = 3; // compute, memory, tensor, stability
+    int32 test_duration_seconds = 4;
+    VerificationLevel level = 5;
+}
+
+// GPU Verification Response
+message GPUVerificationResponse {
+    string verification_id = 1;
+    string gpu_id = 2;
+    VerificationStatus status = 3;
+    repeated BenchmarkResult results = 4;
+    CapabilityAssessment assessment = 5;
+    repeated VerificationIssue issues = 6;
+    google.protobuf.Timestamp verified_at = 7;
+    google.protobuf.Timestamp expires_at = 8;
+}
+
+// Provider Verification Request
+message ProviderVerificationRequest {
+    string provider_id = 1;
+    VerificationLevel level = 2;
+    bool include_gpu_verification = 3;
+    repeated string compliance_standards = 4; // SOC2, HIPAA, PCI-DSS
+}
+
+// Provider Verification Response
+message ProviderVerificationResponse {
+    string verification_id = 1;
+    string provider_id = 2;
+    VerificationStatus status = 3;
+    ProviderCapabilityAssessment assessment = 4;
+    repeated GPUVerificationResponse gpu_verifications = 5;
+    repeated ComplianceResult compliance_results = 6;
+    repeated VerificationIssue issues = 7;
+    google.protobuf.Timestamp verified_at = 8;
+    google.protobuf.Timestamp expires_at = 9;
+}
+
+// Benchmark Suite Request
+message BenchmarkSuiteRequest {
+    string resource_id = 1; // GPU or Provider ID
+    string resource_type = 2; // gpu, provider, system
+    repeated string benchmark_types = 3;
+    BenchmarkConfig config = 4;
+}
+
+// Benchmark Suite Response
+message BenchmarkSuiteResponse {
+    string suite_id = 1;
+    string resource_id = 2;
+    repeated BenchmarkResult results = 3;
+    BenchmarkSummary summary = 4;
+    google.protobuf.Timestamp started_at = 5;
+    google.protobuf.Timestamp completed_at = 6;
+    int32 duration_seconds = 7;
+}
+
+// Verification Status Request
+message VerificationStatusRequest {
+    oneof identifier {
+        string verification_id = 1;
+        string resource_id = 2;
+    }
+}
+
+// Verification Status Response
+message VerificationStatusResponse {
+    string verification_id = 1;
+    string resource_id = 2;
+    VerificationStatus status = 3;
+    int32 progress_percentage = 4;
+    string current_test = 5;
+    repeated string completed_tests = 6;
+    google.protobuf.Timestamp started_at = 7;
+    google.protobuf.Timestamp estimated_completion = 8;
+    repeated VerificationIssue issues = 9;
+}
+
+// Verification Stream Request
+message VerificationStreamRequest {
+    repeated string resource_ids = 1;
+    repeated string verification_types = 2;
+    bool include_historical = 3;
+}
+
+// Verification Event
+message VerificationEvent {
+    enum EventType {
+        UNKNOWN = 0;
+        VERIFICATION_STARTED = 1;
+        VERIFICATION_COMPLETED = 2;
+        VERIFICATION_FAILED = 3;
+        BENCHMARK_COMPLETED = 4;
+        ISSUE_DETECTED = 5;
+        STATUS_UPDATE = 6;
+    }
+    
+    EventType event_type = 1;
+    string verification_id = 2;
+    string resource_id = 3;
+    string message = 4;
+    google.protobuf.Timestamp timestamp = 5;
+    map<string, string> metadata = 6;
+}
+
+// Allocation Validation Request
+message AllocationValidationRequest {
+    string provider_id = 1;
+    string gpu_id = 2;
+    AllocationRequirements requirements = 3;
+    bool require_fresh_verification = 4;
+}
+
+// Allocation Validation Response
+message AllocationValidationResponse {
+    bool is_compatible = 1;
+    double compatibility_score = 2;
+    repeated string compatibility_issues = 3;
+    repeated string warnings = 4;
+    CapabilityMatch capability_match = 5;
+    google.protobuf.Timestamp validated_at = 6;
+}
+
+// Verification Level Enum
+enum VerificationLevel {
+    BASIC = 0;
+    STANDARD = 1;
+    COMPREHENSIVE = 2;
+    CERTIFICATION = 3;
+}
+
+// Verification Status Enum
+enum VerificationStatus {
+    PENDING = 0;
+    RUNNING = 1;
+    COMPLETED = 2;
+    FAILED = 3;
+    EXPIRED = 4;
+    CANCELLED = 5;
+}
+
+// Benchmark Configuration
+message BenchmarkConfig {
+    int32 duration_seconds = 1;
+    int32 iterations = 2;
+    int32 warmup_iterations = 3;
+    double target_utilization = 4;
+    bool stress_test = 5;
+    map<string, string> parameters = 6;
+}
+
+// Benchmark Result
+message BenchmarkResult {
+    string test_name = 1;
+    string test_type = 2; // compute, memory, tensor, stability
+    double score = 3;
+    string unit = 4;
+    double baseline_score = 5;
+    double performance_ratio = 6; // score / baseline
+    bool passed = 7;
+    repeated Metric metrics = 8;
+    google.protobuf.Timestamp started_at = 9;
+    google.protobuf.Timestamp completed_at = 10;
+    int32 duration_seconds = 11;
+    map<string, string> metadata = 12;
+}
+
+// Performance Metric
+message Metric {
+    string name = 1;
+    double value = 2;
+    string unit = 3;
+    double min_threshold = 4;
+    double max_threshold = 5;
+    bool within_limits = 6;
+}
+
+// Benchmark Summary
+message BenchmarkSummary {
+    int32 total_tests = 1;
+    int32 passed_tests = 2;
+    int32 failed_tests = 3;
+    double overall_score = 4;
+    double performance_index = 5; // Weighted average performance
+    string grade = 6; // A, B, C, D, F
+    repeated string categories_passed = 7;
+    repeated string categories_failed = 8;
+}
+
+// Capability Assessment
+message CapabilityAssessment {
+    double overall_score = 1;
+    ComputeCapabilityScore compute = 2;
+    MemoryCapabilityScore memory = 3;
+    TensorCapabilityScore tensor = 4;
+    StabilityScore stability = 5;
+    CompatibilityScore compatibility = 6;
+    string tier = 7; // enterprise, professional, standard, basic
+    repeated string certifications = 8;
+    google.protobuf.Timestamp assessed_at = 9;
+    google.protobuf.Timestamp valid_until = 10;
+}
+
+// Provider Capability Assessment
+message ProviderCapabilityAssessment {
+    double overall_score = 1;
+    InfrastructureScore infrastructure = 2;
+    SecurityScore security = 3;
+    ReliabilityScore reliability = 4;
+    ComplianceScore compliance = 5;
+    PerformanceScore performance = 6;
+    string tier = 7;
+    repeated string certifications = 8;
+    google.protobuf.Timestamp assessed_at = 9;
+    google.protobuf.Timestamp valid_until = 10;
+}
+
+// Individual Capability Scores
+message ComputeCapabilityScore {
+    double score = 1;
+    double fp32_performance = 2;
+    double fp16_performance = 3;
+    double int8_performance = 4;
+    double parallel_efficiency = 5;
+    bool meets_baseline = 6;
+}
+
+message MemoryCapabilityScore {
+    double score = 1;
+    double bandwidth_score = 2;
+    double latency_score = 3;
+    double capacity_score = 4;
+    double ecc_reliability = 5;
+    bool meets_baseline = 6;
+}
+
+message TensorCapabilityScore {
+    double score = 1;
+    double tensor_performance = 2;
+    double mixed_precision_speedup = 3;
+    double ai_workload_efficiency = 4;
+    bool tensor_core_support = 5;
+    bool meets_baseline = 6;
+}
+
+message StabilityScore {
+    double score = 1;
+    double uptime_percentage = 2;
+    double error_rate = 3;
+    double thermal_stability = 4;
+    double power_stability = 5;
+    int32 consecutive_stable_hours = 6;
+    bool meets_baseline = 7;
+}
+
+message CompatibilityScore {
+    double score = 1;
+    int32 supported_apis = 2;
+    int32 driver_compatibility = 3;
+    int32 framework_support = 4;
+    repeated string supported_frameworks = 5;
+    bool meets_baseline = 6;
+}
+
+// Provider-specific scores
+message InfrastructureScore {
+    double score = 1;
+    double network_performance = 2;
+    double storage_performance = 3;
+    double cooling_efficiency = 4;
+    double power_reliability = 5;
+    bool meets_baseline = 6;
+}
+
+message SecurityScore {
+    double score = 1;
+    double encryption_grade = 2;
+    double access_control_grade = 3;
+    double audit_compliance = 4;
+    double vulnerability_score = 5;
+    bool meets_baseline = 6;
+}
+
+message ReliabilityScore {
+    double score = 1;
+    double uptime_percentage = 2;
+    double mtbf_hours = 3;
+    double recovery_time = 4;
+    double data_integrity = 5;
+    bool meets_baseline = 6;
+}
+
+message ComplianceScore {
+    double score = 1;
+    repeated ComplianceResult results = 2;
+    bool meets_baseline = 3;
+}
+
+message PerformanceScore {
+    double score = 1;
+    double aggregate_gpu_performance = 2;
+    double network_throughput = 3;
+    double storage_iops = 4;
+    double response_time = 5;
+    bool meets_baseline = 6;
+}
+
+// Compliance Result
+message ComplianceResult {
+    string standard = 1; // SOC2, HIPAA, PCI-DSS, etc.
+    bool compliant = 2;
+    double compliance_percentage = 3;
+    repeated string issues = 4;
+    repeated string recommendations = 5;
+    google.protobuf.Timestamp assessed_at = 6;
+    google.protobuf.Timestamp valid_until = 7;
+}
+
+// Verification Issue
+message VerificationIssue {
+    enum Severity {
+        INFO = 0;
+        WARNING = 1;
+        ERROR = 2;
+        CRITICAL = 3;
+    }
+    
+    Severity severity = 1;
+    string category = 2;
+    string title = 3;
+    string description = 4;
+    repeated string recommendations = 5;
+    bool blocking = 6;
+    map<string, string> metadata = 7;
+}
+
+// Allocation Requirements
+message AllocationRequirements {
+    int64 memory_mb = 1;
+    int32 cuda_cores = 2;
+    string architecture = 3;
+    string compute_capability = 4;
+    repeated string required_apis = 5;
+    repeated string required_frameworks = 6;
+    bool require_tensor_cores = 7;
+    bool require_ecc = 8;
+    double min_performance_score = 9;
+    int32 min_uptime_percentage = 10;
+}
+
+// Capability Match
+message CapabilityMatch {
+    bool memory_sufficient = 1;
+    bool compute_sufficient = 2;
+    bool architecture_compatible = 3;
+    bool apis_supported = 4;
+    bool frameworks_supported = 5;
+    bool performance_adequate = 6;
+    bool reliability_adequate = 7;
+    double overall_match_score = 8;
+}
