@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana-dashboards-config
+    app.kubernetes.io/part-of: depin-monitoring
+data:
+  dashboards.yml: |
+    apiVersion: 1
+    
+    providers:
+      - name: 'system-dashboards'
+        orgId: 1
+        folder: 'System Monitoring'
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/system
+      
+      - name: 'kubernetes-dashboards'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+      
+      - name: 'depin-dashboards'
+        orgId: 1
+        folder: 'DePIN AI Compute'
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/depin
+      
+      - name: 'application-dashboards'
+        orgId: 1
+        folder: 'Applications'
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/applications

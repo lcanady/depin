@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana-datasources
+    app.kubernetes.io/part-of: depin-monitoring
+data:
+  datasources.yml: |
+    apiVersion: 1
+    
+    deleteDatasources:
+      - name: Prometheus
+        orgId: 1
+    
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        orgId: 1
+        uid: prometheus
+        url: http://prometheus-server.monitoring.svc.cluster.local:9090
+        isDefault: true
+        version: 1
+        editable: true
+        jsonData:
+          httpMethod: POST
+          queryTimeout: "60s"
+          timeInterval: "15s"
+          exemplarTraceIdDestinations:
+            - name: trace_id
+              datasourceUid: jaeger
+        secureJsonData: {}
+      
+      - name: Alertmanager
+        type: alertmanager
+        access: proxy
+        orgId: 1
+        uid: alertmanager
+        url: http://prometheus-alertmanager.monitoring.svc.cluster.local:9093
+        jsonData:
+          implementation: prometheus
+        version: 1
+        editable: true

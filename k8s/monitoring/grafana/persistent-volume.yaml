@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: depin-monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+# Additional PVC for grafana data backup
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-backup-pvc
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana-backup
+    app.kubernetes.io/part-of: depin-monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
